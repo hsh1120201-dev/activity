@@ -111,16 +111,59 @@
         '<p class="note">報名資料只提供新竹社會創新基地辦理活動與通知使用。</p></form>';
       h += "<hr>" + cancelBox;
     } else if (a.status === "feedback") {
-      h += '<p class="note">有報名這個活動的人可以填寫回饋；重複送出會覆蓋上一次的內容。</p>' +
-        '<form id="fb-form" data-id="' + esc(id) + '">' + U.fld("fb-sid", "報名時填寫的手機號碼", S.sid, true, "tel", ' maxlength="20" autocomplete="tel"') +
-        '<div class="f"><span>整體滿意度 <i>*</i>（1 很不滿意，5 很滿意）</span><div class="rate" role="radiogroup" aria-label="整體滿意度">' +
-        [1, 2, 3, 4, 5].map(function (n) { return '<label><input type="radio" name="rating" id="fb-r' + n + '" value="' + n + '" required><span>' + n + "</span></label>"; }).join("") + "</div></div>" +
-        '<label class="f" for="fb-text"><span>心得或建議</span><textarea id="fb-text" maxlength="1000"></textarea></label>' +
-        '<button class="btn" type="submit">送出回饋</button></form>';
+      h += fbDone(id) ? '<div class="ok">感謝您填寫課程滿意度調查！</div>' : surveyForm(id);
     } else {
       h += '<p class="note">這個活動已結束。</p>';
     }
     U.showDlg(h);
+  }
+
+  function fbDone(id) { try { return localStorage.getItem("hub-fb-" + id) === "1"; } catch (e) { return false; } }
+  function opt(name, v) {
+    return '<label class="opt"><input type="radio" name="' + esc(name) + '" value="' + esc(v) + '"><span>' + esc(v) + "</span></label>";
+  }
+  function surveyForm(id) {
+    var n = 0, sv = U.SURVEY;
+    var h = '<form id="fb-form" class="survey" data-id="' + esc(id) + '" novalidate>' +
+      '<h4 style="margin:0;font-size:18px">' + esc(sv.title) + "</h4>" +
+      '<div class="sv-intro"><p>' + esc(sv.intro) + '</p><p class="note">' + esc(sv.contact).replace(/\n/g, "<br>") + "</p></div>";
+    sv.items.forEach(function (it) {
+      if (it.type === "note") { h += '<div class="sv-note">' + esc(it.text) + "</div>"; return; }
+      n++;
+      var key = it.key || "m" + n;
+      h += '<fieldset class="sv-q" data-q="' + esc(key) + '"><legend class="sv-t"><b>' + n + "</b><span>" + esc(it.title) + (it.required ? " <i>*</i>" : "") + "</span></legend>";
+      if (it.type === "single") h += '<div class="choices">' + it.options.map(function (o) { return opt(it.key, o); }).join("") + "</div>";
+      else if (it.type === "matrix") h += it.rows.map(function (r) {
+        return '<fieldset class="mrow" data-row="' + esc(r.key) + '"><legend>' + esc(r.label) + '</legend><div class="choices">' + U.SCALE.map(function (o) { return opt(r.key, o); }).join("") + "</div></fieldset>";
+      }).join("");
+      else if (it.type === "text") h += '<textarea name="' + esc(it.key) + '" maxlength="1000" placeholder="請填入文字" aria-label="' + esc(it.title) + '"></textarea>';
+      else if (it.type === "slider") h += '<div class="slider untouched"><input type="range" name="' + esc(it.key) + '" min="' + it.min + '" max="' + it.max + '" step="1" value="' + Math.round((it.min + it.max) / 2) + '" aria-label="' + esc(it.title) + '"><output>請拖曳選擇</output></div>' +
+        '<div class="ends"><span>' + it.min + "</span><span>" + it.max + "</span></div>";
+      h += "</fieldset>";
+    });
+    return h + '<button class="btn" type="submit">送出</button><p class="note">本問卷採不記名方式。</p></form>';
+  }
+  function collect(form) {
+    var ans = {}, miss = null;
+    form.querySelectorAll(".miss").forEach(function (el) { el.classList.remove("miss"); });
+    U.surveyFields().forEach(function (f) {
+      var v = "";
+      if (f.type === "scale" || f.type === "single") { var c = form.querySelector('input[name="' + f.key + '"]:checked'); v = c ? c.value : ""; }
+      else if (f.type === "text") v = form.querySelector('[name="' + f.key + '"]').value.trim();
+      else if (f.type === "slider") { var r = form.querySelector('[name="' + f.key + '"]'); v = r.closest(".slider").classList.contains("untouched") ? "" : r.value; }
+      ans[f.key] = v;
+      if (f.required && v === "") {
+        var el = form.querySelector('[data-row="' + f.key + '"]') || form.querySelector('[data-q="' + f.key + '"]');
+        if (el) { el.classList.add("miss"); var q = el.closest(".sv-q"); if (q) q.classList.add("miss"); }
+        if (!miss) miss = { f: f, el: el };
+      }
+    });
+    if (miss) {
+      U.toast("請填寫「" + (miss.f.group ? miss.f.group + "－" : "") + miss.f.head + "」");
+      if (miss.el) miss.el.scrollIntoView({ block: "center", behavior: "smooth" });
+      return null;
+    }
+    return ans;
   }
 
   function run(form, action, data, okMsg, after) {
@@ -146,10 +189,11 @@
     } else if (f.id === "cancel-form") {
       run(f, "cancel", { activityId: id, studentId: $("c-sid").value.trim(), name: $("c-name").value.trim() }, "已取消報名。");
     } else if (f.id === "fb-form") {
-      var r = f.querySelector('input[name="rating"]:checked');
-      if (!r) { U.toast("請先選擇滿意度分數。"); return; }
-      var fsid = $("fb-sid").value.trim();
-      run(f, "feedback", { activityId: id, studentId: fsid, rating: +r.value, text: $("fb-text").value.trim() }, "回饋已送出，謝謝你。", function () { remember(fsid); });
+      var ans = collect(f);
+      if (!ans) return;
+      run(f, "feedback", { activityId: id, answers: ans }, "已送出，感謝您的回饋！", function () {
+        try { localStorage.setItem("hub-fb-" + id, "1"); } catch (x) {}
+      });
     }
   });
   document.addEventListener("click", function (e) {
@@ -159,10 +203,27 @@
     else if (t.dataset.close !== undefined) U.closeDlg();
     else { S.error = ""; render(); load(); }
   });
-  document.addEventListener("change", function (e) { if (e.target.id === "f-sem" || e.target.id === "f-status") render(); });
+  document.addEventListener("change", function (e) {
+    if (e.target.id === "f-sem" || e.target.id === "f-status") render();
+    var q = e.target.closest && e.target.closest(".miss");
+    if (q && e.target.type === "radio") { var row = e.target.closest(".mrow"); if (row) row.classList.remove("miss"); var sq = e.target.closest(".sv-q"); if (sq && !sq.querySelector(".mrow.miss")) sq.classList.remove("miss"); }
+  });
+  document.addEventListener("input", function (e) {
+    if (e.target.type !== "range") return;
+    var box = e.target.closest(".slider");
+    box.classList.remove("untouched");
+    box.querySelector("output").textContent = e.target.value + " 分";
+    var sq = e.target.closest(".sv-q"); if (sq) sq.classList.remove("miss");
+  });
+  /* 回饋問卷直連：網址加上 #fb-活動編號 會直接打開該活動的問卷，可做成 QR Code 放在現場 */
+  function openFromHash() {
+    var m = /^#fb-([A-Za-z0-9]+)$/.exec(location.hash || "");
+    if (m && actById(m[1])) openAct(m[1]);
+  }
+  window.addEventListener("hashchange", openFromHash);
 
   render();
-  load();
+  load().then(openFromHash);
 })();
 </script>
 </body>
