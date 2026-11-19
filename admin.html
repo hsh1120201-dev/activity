@@ -148,9 +148,9 @@
       var id = S.pick, rs = regsFor(id);
       h += '<div class="row" style="margin-bottom:12px"><span class="cnt">' + esc(U.capText(actById(id), S.counts)) + "</span>" +
         (rs.length ? '<button class="btn ghost sm" type="button" data-csv>下載 CSV</button><button class="btn ghost sm" type="button" data-copy>複製名單</button>' : "") + "</div>";
-      h += rs.length ? '<div class="scroll"><table><thead><tr><th>#</th><th>手機號碼</th><th>姓名</th><th>單位／組織</th><th>Email</th><th>備註</th><th>報名時間</th><th></th></tr></thead><tbody>' +
+      h += rs.length ? '<div class="scroll"><table><thead><tr><th>#</th><th>姓名</th><th>電話號碼</th><th>Gmail</th><th>性別</th><th>年齡區間</th><th>有什麼想對我們說</th><th>報名時間</th><th></th></tr></thead><tbody>' +
         rs.map(function (r, i) {
-          return "<tr><td>" + (i + 1) + "</td><td>" + esc(r.studentId) + "</td><td>" + esc(r.name) + "</td><td>" + esc(r.dept) + "</td><td>" + esc(r.contact) + '</td><td class="wrapc">' + esc(r.note) + "</td><td>" + esc(U.ftime(r.createdAt)) + "</td>" +
+          return "<tr><td>" + (i + 1) + "</td><td>" + esc(r.name) + "</td><td>" + esc(r.studentId) + "</td><td>" + esc(r.contact) + "</td><td>" + esc(r.gender) + "</td><td>" + esc(r.age) + '</td><td class="wrapc">' + esc(r.note) + "</td><td>" + esc(U.ftime(r.createdAt)) + "</td>" +
             '<td><button class="btn danger sm" type="button" data-rm="' + esc(r.id) + '">移除</button></td></tr>';
         }).join("") + "</tbody></table></div>" : '<div class="panel"><p class="note">這個活動還沒有人報名。</p></div>';
     } else {
@@ -173,8 +173,8 @@
   }
 
   function rowsOf(id) {
-    var rows = [["手機號碼", "姓名", "單位／組織", "Email", "備註", "報名時間"]];
-    regsFor(id).forEach(function (r) { rows.push([r.studentId, r.name, r.dept, r.contact, r.note, U.ftime(r.createdAt)]); });
+    var rows = [["報名的課程", "姓名", "電話號碼", "Gmail", "性別", "年齡區間", "有什麼想對我們說", "報名時間"]];
+    regsFor(id).forEach(function (r) { rows.push([r.activityTitle, r.name, r.studentId, r.contact, r.gender, r.age, r.note, U.ftime(r.createdAt)]); });
     return rows;
   }
   function fbRowsOf(id) {

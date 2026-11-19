@@ -38,7 +38,9 @@
   };
   var toastT;
   U.toast = function (t) {
-    var el = U.$("toast");
+    var el = U.$("toast"), d = U.$("dlg");
+    var host = d && d.open ? d : document.body; // 對話框開著時，訊息要放進對話框裡才看得到
+    if (el.parentNode !== host) host.appendChild(el);
     el.textContent = t;
     el.classList.add("on");
     clearTimeout(toastT);

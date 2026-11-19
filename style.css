@@ -157,3 +157,12 @@ dialog:modal{overflow:auto}
 .mrow .choices{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px}
 .mrow .opt span{width:100%;justify-content:center;text-align:center;min-height:44px;padding:4px 2px;border-radius:10px;font-size:13px;line-height:1.25}
 .sv-block .bars{flex:none}
+.choices.free{display:flex;flex-wrap:wrap}
+.choices.free .opt span{width:auto;padding:4px 14px}
+.mrow:not(.sv-q .mrow) .choices:not(.free){grid-template-columns:repeat(3,minmax(0,1fr))}
+.fixed{min-height:46px;padding:10px 12px;border:1px dashed var(--line);border-radius:10px;background:var(--paper);overflow-wrap:anywhere}
+#reg-form .mrow legend.f{color:var(--ink);font-size:14px;font-weight:500;margin-bottom:4px}
+#reg-form .mrow legend i{font-style:normal;color:var(--danger)}
+#reg-form .f>span i{font-style:normal;color:var(--danger)}
+input[type=tel],input[type=email],input[type=password]{width:100%;min-height:46px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--ink)}
+#reg-form .mrow.miss legend.f{color:var(--danger)}

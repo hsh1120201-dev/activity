@@ -99,16 +99,20 @@
       (a.description ? '<p class="desc">' + esc(a.description) + "</p>" : "") + "<hr>";
 
     var cancelBox = '<details><summary>已經報名，想取消？</summary><form id="cancel-form" data-id="' + esc(id) + '" style="margin-top:12px">' +
-      '<div class="grid2">' + U.fld("c-sid", "報名時填寫的手機號碼", S.sid, true, "tel", ' maxlength="20" autocomplete="tel"') + U.fld("c-name", "報名時填寫的姓名", "", true, "text", ' maxlength="40"') + "</div>" +
+      '<div class="grid2">' + U.fld("c-sid", "報名時填寫的電話號碼", S.sid, true, "tel", ' maxlength="20" autocomplete="tel"') + U.fld("c-name", "報名時填寫的姓名", "", true, "text", ' maxlength="40"') + "</div>" +
       '<button class="btn danger" type="submit">取消報名</button></form></details>';
     if (a.status === "open") {
       if (isFull(a)) h += '<div class="warn">這個活動已額滿。有人取消時，名額會重新開放。</div>';
-      else h += '<form id="reg-form" data-id="' + esc(id) + '">' +
-        '<div class="grid2">' + U.fld("r-sid", "手機號碼", S.sid, true, "tel", ' maxlength="20" autocomplete="tel"') + U.fld("r-name", "姓名", "", true, "text", ' maxlength="40" autocomplete="name"') + "</div>" +
-        '<div class="grid2">' + U.fld("r-dept", "單位／組織", "", false, "text", ' maxlength="40" autocomplete="organization"') + U.fld("r-contact", "Email", "", false, "email", ' maxlength="80" autocomplete="email"') + "</div>" +
-        '<label class="f" for="r-note"><span>備註（飲食、無障礙或其他需求）</span><textarea id="r-note" maxlength="500"></textarea></label>' +
+      else h += '<form id="reg-form" class="survey" data-id="' + esc(id) + '" novalidate>' +
+        U.fld("r-name", "您的姓名：", "", true, "text", ' maxlength="40" autocomplete="name"') +
+        U.fld("r-sid", "您的電話號碼（僅做為聯繫用途）：", S.sid, true, "tel", ' maxlength="20" autocomplete="tel"') +
+        U.fld("r-contact", "您的 Gmail（僅做為聯繫用途）：", "", true, "email", ' maxlength="80" autocomplete="email" placeholder="example@gmail.com"') +
+        '<fieldset class="mrow" data-row="r-gender"><legend class="f"><span>性別： <i>*</i></span></legend><div class="choices">' + ["男性", "女性", "其他"].map(function (o) { return opt("r-gender", o); }).join("") + "</div></fieldset>" +
+        '<fieldset class="mrow" data-row="r-age"><legend class="f"><span>您的年齡區間： <i>*</i></span></legend><div class="choices free">' + ["18歲以下", "18-25歲", "25-35歲", "35-45歲", "45-55歲", "55歲以上"].map(function (o) { return opt("r-age", o); }).join("") + "</div></fieldset>" +
+        '<div class="f"><span>你要報名的課程：</span><div class="fixed">' + esc(a.title || "未命名活動") + "</div></div>" +
+        '<label class="f" for="r-note"><span>有什麼想對我們說：</span><textarea id="r-note" maxlength="500"></textarea></label>' +
         '<button class="btn" type="submit">送出報名</button>' +
-        '<p class="note">報名資料只提供新竹社會創新基地辦理活動與通知使用。</p></form>';
+        '<p class="note">電話與 Gmail 僅做為聯繫用途。</p></form>';
       h += "<hr>" + cancelBox;
     } else if (a.status === "feedback") {
       h += fbDone(id) ? '<div class="ok">感謝您填寫課程滿意度調查！</div>' : surveyForm(id);
@@ -183,9 +187,20 @@
     e.preventDefault();
     var f = e.target, id = f.dataset.id;
     if (f.id === "reg-form") {
-      var sid = $("r-sid").value.trim();
-      run(f, "register", { activityId: id, studentId: sid, name: $("r-name").value.trim(), dept: $("r-dept").value.trim(),
-        contact: $("r-contact").value.trim(), note: $("r-note").value.trim() }, "報名成功。", function () { remember(sid); });
+      var sid = $("r-sid").value.trim(), g = f.querySelector('input[name="r-gender"]:checked'), ag = f.querySelector('input[name="r-age"]:checked');
+      var mail = $("r-contact").value.trim(), nm = $("r-name").value.trim();
+      f.querySelectorAll(".miss").forEach(function (el) { el.classList.remove("miss"); });
+      var bad = !nm ? ["r-name", "請填寫您的姓名"] : !sid ? ["r-sid", "請填寫您的電話號碼"] :
+        !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(mail) ? ["r-contact", "請填寫正確的 Gmail"] :
+        !g ? ["r-gender", "請選擇性別"] : !ag ? ["r-age", "請選擇年齡區間"] : null;
+      if (bad) {
+        U.toast(bad[1]);
+        var el = $(bad[0]) || f.querySelector('[data-row="' + bad[0] + '"]');
+        if (el) { if (el.dataset.row) el.classList.add("miss"); el.scrollIntoView({ block: "center", behavior: "smooth" }); if (el.focus && !el.dataset.row) el.focus(); }
+        return;
+      }
+      run(f, "register", { activityId: id, studentId: sid, name: nm, contact: mail, gender: g.value, age: ag.value,
+        note: $("r-note").value.trim() }, "報名成功。", function () { remember(sid); });
     } else if (f.id === "cancel-form") {
       run(f, "cancel", { activityId: id, studentId: $("c-sid").value.trim(), name: $("c-name").value.trim() }, "已取消報名。");
     } else if (f.id === "fb-form") {
