@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>管理後台｜新竹社會創新基地活動報名平台</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=LXGW+WenKai+TC:wght@400;700&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="brand">HSINCHU SOCIAL INNOVATION HUB</div>
+  </header>
+  <main>
+    <div class="hero">
+      <h1>管理<em>後台</em></h1>
+      <p>新增活動、查看報名名單與回饋。</p>
+    </div>
+    <section id="body"></section>
+  </main>
+</div>
+
+<dialog id="dlg" aria-labelledby="dlg-title"><div class="dlg" id="dlg-body"></div></dialog>
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script src="config.js"></script>
+<script src="common.js"></script>
+<script>
+(function () {
+  "use strict";
+  var $ = U.$, esc = U.esc;
+  var S = { token: "", acts: [], regs: [], fbs: [], counts: {}, loaded: false, tab: "acts", pick: "", busy: false };
+  try { S.token = sessionStorage.getItem("must-admin") || ""; } catch (e) {}
+
+  function actById(id) { for (var i = 0; i < S.acts.length; i++) if (S.acts[i].id === id) return S.acts[i]; return null; }
+  function regsFor(id) { return S.regs.filter(function (r) { return r.activityId === id; }).sort(function (a, b) { return (a.createdAt || "") < (b.createdAt || "") ? -1 : 1; }); }
+  function fbFor(id) { return S.fbs.filter(function (f) { return f.activityId === id; }); }
+  function fbLink(id) { return new URL("./", location.href).href + "#fb-" + id; }
+  function avg(list) { return list.length ? list.reduce(function (a, b) { return a + b; }, 0) / list.length : null; }
+  function bar(p) { return '<span class="bar"><i style="width:' + Math.round(p * 100) + '%"></i></span>'; }
+
+  function fbReport(id) {
+    var fs = fbFor(id), act = actById(id), fields = U.surveyFields();
+    var h = '<div class="panel sv-block" style="margin-bottom:14px"><h4>回饋問卷連結</h4>' +
+      '<p class="note">' + (act.status === "feedback" ? "目前開放填寫。可把連結貼到 LINE 群組，或做成 QR Code 放在課程現場。" : "活動狀態改為「回饋中」後，這個連結才能填寫。") + "</p>" +
+      '<div class="linkbox"><code>' + esc(fbLink(id)) + '</code><button class="btn ghost sm" type="button" data-copylink>複製連結</button></div></div>';
+    if (!fs.length) return h + '<div class="panel"><p class="note">這個活動還沒有收到回饋。</p></div>';
+
+    var allScores = [];
+    fs.forEach(function (f) { fields.forEach(function (x) { if (x.type === "scale") { var s = U.scoreOf(f[x.key]); if (s) allScores.push(s); } }); });
+    var again = fs.map(function (f) { return f.again === "" || f.again == null ? null : +f.again; }).filter(function (v) { return v != null && !isNaN(v); });
+    h += '<div class="panel stat"><div><b>' + fs.length + '</b> 份<br><span class="cnt">回饋（報名 ' + regsFor(id).length + " 人）</span></div>" +
+      "<div><b>" + (allScores.length ? avg(allScores).toFixed(2) : "—") + '</b> / 5<br><span class="cnt">整體平均滿意度</span></div>' +
+      "<div><b>" + (again.length ? Math.round(avg(again)) : "—") + '</b> / 100<br><span class="cnt">再次參加意願平均</span></div>' +
+      '<div style="margin-left:auto"><button class="btn ghost sm" type="button" data-fbcsv>下載回饋 CSV</button></div></div>';
+
+    var n = 0;
+    U.SURVEY.items.forEach(function (it) {
+      if (it.type === "note") return;
+      n++;
+      h += '<div class="panel sv-block" style="margin-top:12px"><h4>' + n + ". " + esc(it.title.replace(/[：:]$/, "")) + "</h4>";
+      if (it.type === "single") {
+        h += '<div class="bars">' + it.options.map(function (o) {
+          var c = fs.filter(function (f) { return f[it.key] === o; }).length;
+          return "<span>" + esc(o) + "</span>" + bar(c / fs.length) + "<span>" + c + "</span>";
+        }).join("") + "</div>";
+      } else if (it.type === "matrix") {
+        h += '<div class="scroll"><table class="mtable"><thead><tr><th>項目</th><th class="num">平均</th>' + U.SCALE.map(function (o) { return '<th class="num">' + o + "</th>"; }).join("") + "</tr></thead><tbody>" +
+          it.rows.map(function (r) {
+            var sc = fs.map(function (f) { return U.scoreOf(f[r.key]); }).filter(Boolean);
+            return "<tr><td>" + esc(r.label) + '</td><td class="num"><strong>' + (sc.length ? avg(sc).toFixed(2) : "—") + "</strong></td>" +
+              U.SCALE.map(function (o) { return '<td class="num">' + fs.filter(function (f) { return f[r.key] === o; }).length + "</td>"; }).join("") + "</tr>";
+          }).join("") + "</tbody></table></div><p class=\"note\">平均分數：非常滿意 5 分，非常不滿意 1 分。</p>";
+      } else if (it.type === "slider") {
+        h += again.length ? '<p style="margin:0">平均 <strong>' + Math.round(avg(again)) + "</strong> 分，最低 " + Math.min.apply(null, again) + " 分，最高 " + Math.max.apply(null, again) + " 分</p>" : '<p class="note">沒有資料</p>';
+      } else if (it.type === "text") {
+        var ts = fs.filter(function (f) { return (f[it.key] || "").trim(); });
+        h += ts.length ? '<div class="list">' + ts.map(function (f) { return '<div class="fbitem"><span class="cnt">' + esc(U.ftime(f.createdAt)) + "</span><p>" + esc(f[it.key]) + "</p></div>"; }).join("") + "</div>" : '<p class="note">沒有人填寫</p>';
+      }
+      h += "</div>";
+    });
+    return h;
+  }
+
+  function logout(msg) {
+    S.token = ""; S.loaded = false;
+    try { sessionStorage.removeItem("must-admin"); } catch (e) {}
+    render(); if (msg) U.toast(msg);
+  }
+  function call(action, data) {
+    return U.api(action, Object.assign({ token: S.token }, data || {})).catch(function (e) {
+      if (e.code === "auth") logout(e.message);
+      throw e;
+    });
+  }
+  function load() {
+    return call("adminData").then(function (j) {
+      S.acts = j.activities || []; S.regs = j.registrations || []; S.fbs = j.feedback || [];
+      S.counts = {}; S.regs.forEach(function (r) { S.counts[r.activityId] = (S.counts[r.activityId] || 0) + 1; });
+      S.loaded = true; render();
+    });
+  }
+  function act(fn, okMsg) {
+    if (S.busy) return;
+    S.busy = true;
+    fn().then(function () { U.toast(okMsg); U.closeDlg(); return load(); })
+      .catch(function (e) { if (e.code !== "auth") U.toast(e.message); })
+      .then(function () { S.busy = false; });
+  }
+
+  function picker() {
+    var acts = U.sortActs(S.acts);
+    if (!actById(S.pick)) S.pick = acts.length ? acts[0].id : "";
+    return '<label class="f" for="a-pick" style="margin-bottom:12px"><span>活動</span><select id="a-pick">' +
+      acts.map(function (a) { return '<option value="' + esc(a.id) + '"' + (a.id === S.pick ? " selected" : "") + ">" + esc(U.dparts(a.date).md + "　" + (a.title || "未命名活動")) + "</option>"; }).join("") + "</select></label>";
+  }
+
+  function render() {
+    var el = $("body");
+    if (!U.configured()) { el.innerHTML = U.SETUP_NOTE; return; }
+    if (!S.token) {
+      el.innerHTML = '<form id="login-form" class="panel login">' + U.fld("pw", "後台密碼", "", true, "password", ' autocomplete="current-password"') +
+        '<button class="btn" type="submit">登入</button><p class="note">密碼放在 Google 試算表「設定」工作表的 B1 儲存格。</p></form>';
+      return;
+    }
+    if (!S.loaded) { el.innerHTML = '<div class="panel"><p class="note">載入中…</p></div>'; return; }
+    var tabs = [["acts", "活動管理"], ["regs", "報名名單"], ["fb", "回饋管理"]];
+    var h = '<div class="tabs" role="tablist">' + tabs.map(function (t) { return '<button type="button" role="tab" aria-selected="' + (S.tab === t[0]) + '" data-tab="' + t[0] + '">' + t[1] + "</button>"; }).join("") +
+      '<button type="button" data-logout style="margin-left:auto">登出</button></div>';
+
+    if (S.tab === "acts") {
+      var acts = U.sortActs(S.acts);
+      h += '<div class="row" style="margin-bottom:12px"><button class="btn" type="button" data-new>新增活動</button><span class="cnt">共 ' + S.acts.length + ' 個活動</span></div><div class="list">';
+      h += acts.length ? acts.map(function (a) {
+        return '<div class="arow"><div class="info"><strong>' + esc(a.title || "未命名活動") + "</strong>" +
+          '<span class="tags"><span class="pill ' + esc(a.status) + '">' + esc(U.STATUS[a.status] || "") + '</span><span class="cnt">' + esc(U.dparts(a.date).full) + " · " + esc(U.capText(a, S.counts)) + "</span></span></div>" +
+          '<div class="row"><button class="btn ghost sm" type="button" data-edit="' + esc(a.id) + '">編輯</button><button class="btn danger sm" type="button" data-del="' + esc(a.id) + '">刪除</button></div></div>';
+      }).join("") : '<div class="panel"><p class="note">還沒有活動。按「新增活動」建立第一個。</p></div>';
+      h += "</div>";
+    } else if (!S.acts.length) {
+      h += '<div class="panel"><p class="note">還沒有活動。先到「活動管理」新增。</p></div>';
+    } else if (S.tab === "regs") {
+      h += picker();
+      var id = S.pick, rs = regsFor(id);
+      h += '<div class="row" style="margin-bottom:12px"><span class="cnt">' + esc(U.capText(actById(id), S.counts)) + "</span>" +
+        (rs.length ? '<button class="btn ghost sm" type="button" data-csv>下載 CSV</button><button class="btn ghost sm" type="button" data-copy>複製名單</button>' : "") + "</div>";
+      h += rs.length ? '<div class="scroll"><table><thead><tr><th>#</th><th>姓名</th><th>電話號碼</th><th>Gmail</th><th>性別</th><th>年齡區間</th><th>有什麼想對我們說</th><th>報名時間</th><th></th></tr></thead><tbody>' +
+        rs.map(function (r, i) {
+          return "<tr><td>" + (i + 1) + "</td><td>" + esc(r.name) + "</td><td>" + esc(r.studentId) + "</td><td>" + esc(r.contact) + "</td><td>" + esc(r.gender) + "</td><td>" + esc(r.age) + '</td><td class="wrapc">' + esc(r.note) + "</td><td>" + esc(U.ftime(r.createdAt)) + "</td>" +
+            '<td><button class="btn danger sm" type="button" data-rm="' + esc(r.id) + '">移除</button></td></tr>';
+        }).join("") + "</tbody></table></div>" : '<div class="panel"><p class="note">這個活動還沒有人報名。</p></div>';
+    } else {
+      h += picker();
+      h += fbReport(S.pick);
+    }
+    el.innerHTML = h;
+  }
+
+  function openEdit(id) {
+    var a = (id && actById(id)) || { status: "open", capacity: 0 };
+    U.showDlg(U.head(id ? "編輯活動" : "新增活動") + '<form id="act-form" data-id="' + esc(id || "") + '">' +
+      U.fld("e-title", "活動名稱", a.title, true, "text", ' maxlength="80"') +
+      '<div class="grid2">' + U.fld("e-sem", "類別（例：講座、工作坊）", a.semester, false, "text", ' maxlength="12"') + U.fld("e-date", "日期", a.date, true, "date") + "</div>" +
+      '<div class="grid2">' + U.fld("e-time", "時間（例：14:00–16:00）", a.time, false, "text", ' maxlength="30"') + U.fld("e-loc", "地點", a.location, false, "text", ' maxlength="60"') + "</div>" +
+      '<div class="grid2">' + U.fld("e-cap", "名額上限（0 為不限）", a.capacity || 0, false, "number", ' min="0" step="1"') +
+      '<label class="f" for="e-status"><span>狀態</span><select id="e-status">' + Object.keys(U.STATUS).map(function (k) { return '<option value="' + k + '"' + (a.status === k ? " selected" : "") + ">" + U.STATUS[k] + "</option>"; }).join("") + "</select></label></div>" +
+      '<label class="f" for="e-desc"><span>活動說明</span><textarea id="e-desc" maxlength="2000">' + esc(a.description) + "</textarea></label>" +
+      '<div class="row"><button class="btn" type="submit">儲存活動</button><button class="btn ghost" type="button" data-close>取消</button></div></form>');
+  }
+
+  function rowsOf(id) {
+    var rows = [["報名的課程", "姓名", "電話號碼", "Gmail", "性別", "年齡區間", "有什麼想對我們說", "報名時間"]];
+    regsFor(id).forEach(function (r) { rows.push([r.activityTitle, r.name, r.studentId, r.contact, r.gender, r.age, r.note, U.ftime(r.createdAt)]); });
+    return rows;
+  }
+  function fbRowsOf(id) {
+    var fields = U.surveyFields();
+    var rows = [["填寫時間"].concat(fields.map(function (f) { return f.group ? f.group + "－" + f.head : f.head; }))];
+    fbFor(id).forEach(function (f) { rows.push([U.ftime(f.createdAt)].concat(fields.map(function (x) { return f[x.key]; }))); });
+    return rows;
+  }
+  function download(rows, name) {
+    var csv = "\uFEFF" + rows.map(function (r) { return r.map(csvCell).join(","); }).join("\r\n");
+    var url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    var link = document.createElement("a");
+    link.href = url; link.download = name.replace(/[\\/:*?"<>|]/g, "") + ".csv";
+    document.body.appendChild(link); link.click(); link.remove();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 2000);
+  }
+  function csvCell(v) {
+    v = String(v == null ? "" : v);
+    if (/^[=+\-@]/.test(v)) v = "'" + v; // 避免試算表把內容當成公式執行
+    return '"' + v.replace(/"/g, '""') + '"';
+  }
+
+  document.addEventListener("submit", function (e) {
+    e.preventDefault();
+    var f = e.target;
+    if (f.id === "login-form") {
+      if (S.busy) return; S.busy = true;
+      U.api("login", { password: $("pw").value }).then(function (j) {
+        S.token = j.token;
+        try { sessionStorage.setItem("must-admin", S.token); } catch (x) {}
+        render(); return load();
+      }).catch(function (x) { U.toast(x.message); }).then(function () { S.busy = false; });
+    } else if (f.id === "act-form") {
+      var a = { id: f.dataset.id, title: $("e-title").value.trim(), semester: $("e-sem").value.trim(), date: $("e-date").value, time: $("e-time").value.trim(),
+        location: $("e-loc").value.trim(), capacity: parseInt($("e-cap").value, 10) || 0, status: $("e-status").value, description: $("e-desc").value.trim() };
+      if (!a.title || !a.date) { U.toast("請填寫活動名稱與日期。"); return; }
+      act(function () { return call("saveActivity", { activity: a }); }, "活動已儲存。");
+    }
+  });
+  document.addEventListener("click", function (e) {
+    var t = e.target.closest("[data-close],[data-tab],[data-logout],[data-new],[data-edit],[data-del],[data-rm],[data-csv],[data-copy],[data-fbcsv],[data-copylink]");
+    if (!t) { if (e.target === $("dlg")) U.closeDlg(); return; }
+    var d = t.dataset;
+    if (d.close !== undefined) U.closeDlg();
+    else if (d.tab !== undefined) { S.tab = d.tab; render(); }
+    else if (d.logout !== undefined) logout("已登出。");
+    else if (d.new !== undefined) openEdit("");
+    else if (d.edit !== undefined) openEdit(d.edit);
+    else if (d.del !== undefined) {
+      if (d.sure !== "1") { d.sure = "1"; t.textContent = "連同報名一起刪除？"; return; }
+      act(function () { return call("deleteActivity", { id: d.del }); }, "活動已刪除。");
+    } else if (d.rm !== undefined) {
+      if (d.sure !== "1") { d.sure = "1"; t.textContent = "確定移除？"; return; }
+      act(function () { return call("removeRegistration", { id: d.rm }); }, "已移除這筆報名。");
+    } else if (d.csv !== undefined) {
+      var a = actById(S.pick);
+      download(rowsOf(S.pick), "報名名單-" + ((a && a.title) || "活動"));
+    } else if (d.fbcsv !== undefined) {
+      var a2 = actById(S.pick);
+      download(fbRowsOf(S.pick), "課程滿意度-" + ((a2 && a2.title) || "活動"));
+    } else if (d.copylink !== undefined) {
+      navigator.clipboard.writeText(fbLink(S.pick)).then(function () { U.toast("連結已複製。"); }, function () { U.toast("無法自動複製，請直接選取連結文字複製。"); });
+    } else if (d.copy !== undefined) {
+      var text = rowsOf(S.pick).map(function (r) { return r.map(function (v) { return String(v == null ? "" : v).replace(/[\t\r\n]+/g, " "); }).join("\t"); }).join("\n");
+      navigator.clipboard.writeText(text).then(function () { U.toast("名單已複製，可直接貼到試算表。"); }, function () { U.toast("無法複製，請改用下載 CSV。"); });
+    }
+  });
+  document.addEventListener("change", function (e) { if (e.target.id === "a-pick") { S.pick = e.target.value; render(); } });
+
+  render();
+  if (S.token && U.configured()) load().catch(function (e) { if (e.code !== "auth") { $("body").innerHTML = '<div class="panel"><p class="note">' + esc(e.message) + "</p></div>"; } });
+})();
+</script>
+</body>
+</html>
