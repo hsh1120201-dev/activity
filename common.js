@@ -69,7 +69,7 @@
   };
   U.fld = function (id, label, val, req, type, extra) {
     return '<label class="f" for="' + id + '"><span>' + label + (req ? " <i>*</i>" : "") + '</span><input id="' + id + '" type="' + (type || "text") +
-      '" value="' + U.esc(val || "") + '"' + (req ? " required" : "") + (extra || "") + "></label>";
+      '" value="' + U.esc(val == null ? "" : val) + '"' + (req ? " required" : "") + (extra || "") + "></label>";
   };
   /* 課程滿意度調查（與 Code.gs 的 SURVEY 保持一致） */
   U.SCALE = ["非常滿意", "滿意", "普通", "不滿意", "非常不滿意"];

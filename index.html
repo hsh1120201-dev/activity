@@ -59,7 +59,8 @@
       (meta ? '<span class="m">' + meta + "</span>" : "") +
       '<span class="tags"><span class="pill ' + esc(a.status) + '">' + esc(U.STATUS[a.status] || "") + "</span>" +
       (chip ? '<span class="chip">' + chip + "</span>" : "") +
-      '<span class="cnt">' + esc(U.capText(a, S.counts)) + "</span></span></span></button>";
+      '<span class="cnt">' + esc(U.capText(a, S.counts)) + "</span></span></span>" +
+      (a.image ? '<span class="thumb"><img src="' + esc(a.image) + '" alt="" loading="lazy" onerror="this.parentNode.remove()"></span>' : "") + "</button>";
   }
 
   function render() {
@@ -91,6 +92,7 @@
     var a = actById(id); if (!a) { U.closeDlg(); return; }
     var d = U.dparts(a.date);
     var h = U.head(a.title || "未命名活動") +
+      (a.image ? '<a class="poster" href="' + esc(a.image) + '" target="_blank" rel="noopener"><img src="' + esc(a.image) + '" alt="' + esc(a.title || "活動圖片") + '" onerror="this.parentNode.remove()"></a>' : "") +
       '<div class="tags"><span class="pill ' + esc(a.status) + '">' + esc(U.STATUS[a.status] || "") + '</span><span class="cnt">' + esc(U.capText(a, S.counts)) + "</span></div>" +
       '<dl class="meta"><dt>日期</dt><dd>' + esc(d.full) + "</dd>" +
       (a.time ? "<dt>時間</dt><dd>" + esc(a.time) + "</dd>" : "") +

@@ -136,7 +136,7 @@
       var acts = U.sortActs(S.acts);
       h += '<div class="row" style="margin-bottom:12px"><button class="btn" type="button" data-new>新增活動</button><span class="cnt">共 ' + S.acts.length + ' 個活動</span></div><div class="list">';
       h += acts.length ? acts.map(function (a) {
-        return '<div class="arow"><div class="info"><strong>' + esc(a.title || "未命名活動") + "</strong>" +
+        return '<div class="arow">' + (a.image ? '<img class="athumb" src="' + esc(a.image) + '" alt="" loading="lazy">' : '<span class="athumb empty">無圖片</span>') + '<div class="info"><strong>' + esc(a.title || "未命名活動") + "</strong>" +
           '<span class="tags"><span class="pill ' + esc(a.status) + '">' + esc(U.STATUS[a.status] || "") + '</span><span class="cnt">' + esc(U.dparts(a.date).full) + " · " + esc(U.capText(a, S.counts)) + "</span></span></div>" +
           '<div class="row"><button class="btn ghost sm" type="button" data-edit="' + esc(a.id) + '">編輯</button><button class="btn danger sm" type="button" data-del="' + esc(a.id) + '">刪除</button></div></div>';
       }).join("") : '<div class="panel"><p class="note">還沒有活動。按「新增活動」建立第一個。</p></div>';
@@ -169,6 +169,11 @@
       '<div class="grid2">' + U.fld("e-cap", "名額上限（0 為不限）", a.capacity || 0, false, "number", ' min="0" step="1"') +
       '<label class="f" for="e-status"><span>狀態</span><select id="e-status">' + Object.keys(U.STATUS).map(function (k) { return '<option value="' + k + '"' + (a.status === k ? " selected" : "") + ">" + U.STATUS[k] + "</option>"; }).join("") + "</select></label></div>" +
       '<label class="f" for="e-desc"><span>活動說明</span><textarea id="e-desc" maxlength="2000">' + esc(a.description) + "</textarea></label>" +
+      '<div class="f"><span>活動圖片（海報或宣傳圖，會顯示在前台）</span><div class="imgpick">' +
+      '<div id="e-preview" class="imgprev">' + (a.image ? '<img src="' + esc(a.image) + '" alt="目前的活動圖片">' : '<span class="note">尚未上傳圖片</span>') + "</div>" +
+      '<input type="hidden" id="e-image" value="' + esc(a.image || "") + '">' +
+      '<div class="row"><label class="btn ghost sm" for="e-file">選擇圖片</label><input type="file" id="e-file" accept="image/jpeg,image/png,image/webp" hidden>' +
+      '<button class="btn ghost sm" type="button" data-noimg' + (a.image ? "" : " hidden") + '>移除圖片</button><span id="e-imgmsg" class="cnt"></span></div></div></div>' +
       '<div class="row"><button class="btn" type="submit">儲存活動</button><button class="btn ghost" type="button" data-close>取消</button></div></form>');
   }
 
@@ -209,13 +214,14 @@
       }).catch(function (x) { U.toast(x.message); }).then(function () { S.busy = false; });
     } else if (f.id === "act-form") {
       var a = { id: f.dataset.id, title: $("e-title").value.trim(), semester: $("e-sem").value.trim(), date: $("e-date").value, time: $("e-time").value.trim(),
-        location: $("e-loc").value.trim(), capacity: parseInt($("e-cap").value, 10) || 0, status: $("e-status").value, description: $("e-desc").value.trim() };
+        location: $("e-loc").value.trim(), capacity: parseInt($("e-cap").value, 10) || 0, status: $("e-status").value, description: $("e-desc").value.trim(), image: $("e-image").value };
+      if (S.uploading) { U.toast("圖片還在上傳，請稍等一下再儲存。"); return; }
       if (!a.title || !a.date) { U.toast("請填寫活動名稱與日期。"); return; }
       act(function () { return call("saveActivity", { activity: a }); }, "活動已儲存。");
     }
   });
   document.addEventListener("click", function (e) {
-    var t = e.target.closest("[data-close],[data-tab],[data-logout],[data-new],[data-edit],[data-del],[data-rm],[data-csv],[data-copy],[data-fbcsv],[data-copylink]");
+    var t = e.target.closest("[data-close],[data-tab],[data-logout],[data-new],[data-edit],[data-del],[data-rm],[data-csv],[data-copy],[data-fbcsv],[data-copylink],[data-noimg]");
     if (!t) { if (e.target === $("dlg")) U.closeDlg(); return; }
     var d = t.dataset;
     if (d.close !== undefined) U.closeDlg();
@@ -235,6 +241,8 @@
     } else if (d.fbcsv !== undefined) {
       var a2 = actById(S.pick);
       download(fbRowsOf(S.pick), "課程滿意度-" + ((a2 && a2.title) || "活動"));
+    } else if (d.noimg !== undefined) {
+      $("e-image").value = ""; $("e-preview").innerHTML = '<span class="note">尚未上傳圖片</span>'; t.hidden = true;
     } else if (d.copylink !== undefined) {
       navigator.clipboard.writeText(fbLink(S.pick)).then(function () { U.toast("連結已複製。"); }, function () { U.toast("無法自動複製，請直接選取連結文字複製。"); });
     } else if (d.copy !== undefined) {
@@ -242,7 +250,43 @@
       navigator.clipboard.writeText(text).then(function () { U.toast("名單已複製，可直接貼到試算表。"); }, function () { U.toast("無法複製，請改用下載 CSV。"); });
     }
   });
-  document.addEventListener("change", function (e) { if (e.target.id === "a-pick") { S.pick = e.target.value; render(); } });
+  document.addEventListener("change", function (e) {
+    if (e.target.id === "a-pick") { S.pick = e.target.value; render(); }
+    else if (e.target.id === "e-file" && e.target.files[0]) uploadImage(e.target.files[0], e.target);
+  });
+
+  /* 上傳前先縮小到長邊 1600px 的 JPG，載入比較快，也不會超過大小限制 */
+  function shrink(file) {
+    return new Promise(function (ok, bad) {
+      var url = URL.createObjectURL(file), img = new Image();
+      img.onload = function () {
+        var max = 1600, w = img.naturalWidth, h = img.naturalHeight, k = Math.min(1, max / Math.max(w, h));
+        var c = document.createElement("canvas"); c.width = Math.round(w * k); c.height = Math.round(h * k);
+        var g = c.getContext("2d"); g.fillStyle = "#fff"; g.fillRect(0, 0, c.width, c.height); g.drawImage(img, 0, 0, c.width, c.height);
+        URL.revokeObjectURL(url);
+        ok(c.toDataURL("image/jpeg", 0.85));
+      };
+      img.onerror = function () { URL.revokeObjectURL(url); bad(new Error("這個檔案無法當成圖片讀取，請換一張 JPG 或 PNG。")); };
+      img.src = url;
+    });
+  }
+  function uploadImage(file, input) {
+    var msg = $("e-imgmsg");
+    if (!/^image\//.test(file.type)) { U.toast("請選擇圖片檔（JPG、PNG）。"); input.value = ""; return; }
+    S.uploading = true; msg.textContent = "上傳中…";
+    shrink(file).then(function (dataUrl) {
+      $("e-preview").innerHTML = '<img src="' + dataUrl + '" alt="新選的活動圖片">';
+      var title = ($("e-title") && $("e-title").value.trim()) || "活動圖片";
+      return call("uploadImage", { type: "image/jpeg", name: title, data: dataUrl.split(",")[1] });
+    }).then(function (j) {
+      $("e-image").value = j.url; msg.textContent = "已上傳，記得按「儲存活動」";
+      var rm = document.querySelector("[data-noimg]"); if (rm) rm.hidden = false;
+    }).catch(function (e) {
+      msg.textContent = ""; U.toast(e.message);
+      var cur = $("e-image").value;
+      $("e-preview").innerHTML = cur ? '<img src="' + esc(cur) + '" alt="目前的活動圖片">' : '<span class="note">尚未上傳圖片</span>';
+    }).then(function () { S.uploading = false; input.value = ""; });
+  }
 
   render();
   if (S.token && U.configured()) load().catch(function (e) { if (e.code !== "auth") { $("body").innerHTML = '<div class="panel"><p class="note">' + esc(e.message) + "</p></div>"; } });
