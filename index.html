@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>新竹社會創新基地活動報名平台</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=LXGW+WenKai+TC:wght@400;700&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="brand">HSINCHU SOCIAL INNOVATION HUB</div>
+    <nav class="nav" aria-label="主選單">
+      <a href="index.html" aria-current="page">前台</a>
+      <a href="admin.html">管理後台</a>
+    </nav>
+  </header>
+
+  <main>
+    <div class="hero">
+      <h1>新竹社會創新基地<br><em>活動報名</em>平台</h1>
+      <p>講座、工作坊與交流活動，都在這裡報名與填寫回饋。</p>
+    </div>
+
+    <section aria-labelledby="h-list">
+      <div class="sec-head"><h2 id="h-list">近期活動</h2><small>點選活動即可查看與報名</small></div>
+      <div class="filters">
+        <label for="f-sem">類別<select id="f-sem"><option value="">全部類別</option></select></label>
+        <label for="f-status">狀態<select id="f-status">
+          <option value="">全部狀態</option><option value="open">報名中</option><option value="feedback">回饋中</option><option value="closed">已結束</option>
+        </select></label>
+      </div>
+      <div id="list" class="list"><div class="panel"><p class="note">載入中…</p></div></div>
+    </section>
+  </main>
+</div>
+
+<dialog id="dlg" aria-labelledby="dlg-title"><div class="dlg" id="dlg-body"></div></dialog>
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script src="config.js"></script>
+<script src="common.js"></script>
+<script>
+(function () {
+  "use strict";
+  var $ = U.$, esc = U.esc;
+  var S = { acts: [], counts: {}, loaded: false, error: "", sid: "", busy: false };
+  try { S.sid = localStorage.getItem("must-sid") || ""; } catch (e) {}
+
+  function actById(id) { for (var i = 0; i < S.acts.length; i++) if (S.acts[i].id === id) return S.acts[i]; return null; }
+  function isFull(a) { return a.capacity > 0 && (S.counts[a.id] || 0) >= a.capacity; }
+
+  function actRow(a) {
+    var d = U.dparts(a.date);
+    var meta = [a.semester, a.time, a.location].filter(Boolean).map(esc).join(" · ");
+    var chip = a.status === "open" && isFull(a) ? "額滿" : "";
+    return '<button class="act" type="button" data-act="' + esc(a.id) + '">' +
+      '<span class="date"><b>' + esc(d.md) + "</b><i>" + esc(d.wd) + "</i></span>" +
+      '<span class="body"><span class="t">' + esc(a.title || "未命名活動") + "</span>" +
+      (meta ? '<span class="m">' + meta + "</span>" : "") +
+      '<span class="tags"><span class="pill ' + esc(a.status) + '">' + esc(U.STATUS[a.status] || "") + "</span>" +
+      (chip ? '<span class="chip">' + chip + "</span>" : "") +
+      '<span class="cnt">' + esc(U.capText(a, S.counts)) + "</span></span></span></button>";
+  }
+
+  function render() {
+    var sel = $("f-sem"), cur = sel.value, sems = {};
+    S.acts.forEach(function (a) { if (a.semester) sems[a.semester] = 1; });
+    var keys = Object.keys(sems).sort().reverse();
+    sel.innerHTML = '<option value="">全部類別</option>' + keys.map(function (k) { return '<option value="' + esc(k) + '">' + esc(k) + "</option>"; }).join("");
+    if (keys.indexOf(cur) >= 0) sel.value = cur;
+    var fs = sel.value, ft = $("f-status").value, list = $("list");
+
+    if (!U.configured()) list.innerHTML = U.SETUP_NOTE;
+    else if (S.error) list.innerHTML = '<div class="panel"><p class="note">' + esc(S.error) + '</p><p style="margin:10px 0 0"><button class="btn ghost sm" type="button" data-reload>重新載入</button></p></div>';
+    else if (!S.loaded) list.innerHTML = '<div class="panel"><p class="note">載入中…</p></div>';
+    else {
+      var rows = U.sortActs(S.acts).filter(function (a) { return (!fs || a.semester === fs) && (!ft || a.status === ft); });
+      list.innerHTML = rows.length ? rows.map(actRow).join("") :
+        '<div class="panel"><p class="note">' + (S.acts.length ? "沒有符合條件的活動，試試其他類別或狀態。" : "目前還沒有活動。") + "</p></div>";
+    }
+  }
+
+  function load() {
+    if (!U.configured()) { render(); return Promise.resolve(); }
+    return U.api("list").then(function (j) { S.acts = j.activities || []; S.counts = j.counts || {}; S.loaded = true; S.error = ""; render(); },
+      function (e) { if (!S.loaded) S.error = e.message; render(); });
+  }
+  function remember(sid) { S.sid = sid; try { localStorage.setItem("must-sid", sid); } catch (e) {} }
+
+  function openAct(id) {
+    var a = actById(id); if (!a) { U.closeDlg(); return; }
+    var d = U.dparts(a.date);
+    var h = U.head(a.title || "未命名活動") +
+      '<div class="tags"><span class="pill ' + esc(a.status) + '">' + esc(U.STATUS[a.status] || "") + '</span><span class="cnt">' + esc(U.capText(a, S.counts)) + "</span></div>" +
+      '<dl class="meta"><dt>日期</dt><dd>' + esc(d.full) + "</dd>" +
+      (a.time ? "<dt>時間</dt><dd>" + esc(a.time) + "</dd>" : "") +
+      (a.location ? "<dt>地點</dt><dd>" + esc(a.location) + "</dd>" : "") +
+      (a.semester ? "<dt>類別</dt><dd>" + esc(a.semester) + "</dd>" : "") + "</dl>" +
+      (a.description ? '<p class="desc">' + esc(a.description) + "</p>" : "") + "<hr>";
+
+    var cancelBox = '<details><summary>已經報名，想取消？</summary><form id="cancel-form" data-id="' + esc(id) + '" style="margin-top:12px">' +
+      '<div class="grid2">' + U.fld("c-sid", "報名時填寫的手機號碼", S.sid, true, "tel", ' maxlength="20" autocomplete="tel"') + U.fld("c-name", "報名時填寫的姓名", "", true, "text", ' maxlength="40"') + "</div>" +
+      '<button class="btn danger" type="submit">取消報名</button></form></details>';
+    if (a.status === "open") {
+      if (isFull(a)) h += '<div class="warn">這個活動已額滿。有人取消時，名額會重新開放。</div>';
+      else h += '<form id="reg-form" data-id="' + esc(id) + '">' +
+        '<div class="grid2">' + U.fld("r-sid", "手機號碼", S.sid, true, "tel", ' maxlength="20" autocomplete="tel"') + U.fld("r-name", "姓名", "", true, "text", ' maxlength="40" autocomplete="name"') + "</div>" +
+        '<div class="grid2">' + U.fld("r-dept", "單位／組織", "", false, "text", ' maxlength="40" autocomplete="organization"') + U.fld("r-contact", "Email", "", false, "email", ' maxlength="80" autocomplete="email"') + "</div>" +
+        '<label class="f" for="r-note"><span>備註（飲食、無障礙或其他需求）</span><textarea id="r-note" maxlength="500"></textarea></label>' +
+        '<button class="btn" type="submit">送出報名</button>' +
+        '<p class="note">報名資料只提供新竹社會創新基地辦理活動與通知使用。</p></form>';
+      h += "<hr>" + cancelBox;
+    } else if (a.status === "feedback") {
+      h += '<p class="note">有報名這個活動的人可以填寫回饋；重複送出會覆蓋上一次的內容。</p>' +
+        '<form id="fb-form" data-id="' + esc(id) + '">' + U.fld("fb-sid", "報名時填寫的手機號碼", S.sid, true, "tel", ' maxlength="20" autocomplete="tel"') +
+        '<div class="f"><span>整體滿意度 <i>*</i>（1 很不滿意，5 很滿意）</span><div class="rate" role="radiogroup" aria-label="整體滿意度">' +
+        [1, 2, 3, 4, 5].map(function (n) { return '<label><input type="radio" name="rating" id="fb-r' + n + '" value="' + n + '" required><span>' + n + "</span></label>"; }).join("") + "</div></div>" +
+        '<label class="f" for="fb-text"><span>心得或建議</span><textarea id="fb-text" maxlength="1000"></textarea></label>' +
+        '<button class="btn" type="submit">送出回饋</button></form>';
+    } else {
+      h += '<p class="note">這個活動已結束。</p>';
+    }
+    U.showDlg(h);
+  }
+
+  function run(form, action, data, okMsg, after) {
+    if (S.busy) return;
+    S.busy = true;
+    var btn = form.querySelector('button[type="submit"]'), label = btn.textContent;
+    btn.disabled = true; btn.textContent = "處理中…";
+    U.api(action, data).then(function () {
+      U.toast(okMsg);
+      if (after) after();
+      return load().then(function () { U.closeDlg(); });
+    }, function (e) { U.toast(e.message); btn.disabled = false; btn.textContent = label; })
+      .then(function () { S.busy = false; });
+  }
+
+  document.addEventListener("submit", function (e) {
+    e.preventDefault();
+    var f = e.target, id = f.dataset.id;
+    if (f.id === "reg-form") {
+      var sid = $("r-sid").value.trim();
+      run(f, "register", { activityId: id, studentId: sid, name: $("r-name").value.trim(), dept: $("r-dept").value.trim(),
+        contact: $("r-contact").value.trim(), note: $("r-note").value.trim() }, "報名成功。", function () { remember(sid); });
+    } else if (f.id === "cancel-form") {
+      run(f, "cancel", { activityId: id, studentId: $("c-sid").value.trim(), name: $("c-name").value.trim() }, "已取消報名。");
+    } else if (f.id === "fb-form") {
+      var r = f.querySelector('input[name="rating"]:checked');
+      if (!r) { U.toast("請先選擇滿意度分數。"); return; }
+      var fsid = $("fb-sid").value.trim();
+      run(f, "feedback", { activityId: id, studentId: fsid, rating: +r.value, text: $("fb-text").value.trim() }, "回饋已送出，謝謝你。", function () { remember(fsid); });
+    }
+  });
+  document.addEventListener("click", function (e) {
+    var t = e.target.closest("[data-act],[data-close],[data-reload]");
+    if (!t) { if (e.target === $("dlg")) U.closeDlg(); return; }
+    if (t.dataset.act !== undefined) openAct(t.dataset.act);
+    else if (t.dataset.close !== undefined) U.closeDlg();
+    else { S.error = ""; render(); load(); }
+  });
+  document.addEventListener("change", function (e) { if (e.target.id === "f-sem" || e.target.id === "f-status") render(); });
+
+  render();
+  load();
+})();
+</script>
+</body>
+</html>
