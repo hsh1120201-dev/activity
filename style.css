@@ -187,8 +187,8 @@ td input[type=checkbox],th input[type=checkbox]{width:18px;height:18px;accent-co
 code{font-size:12.5px;padding:1px 5px;border-radius:5px;background:var(--paper);border:1px solid var(--line)}
 .mailbody img{display:block;max-width:100%;height:auto;margin:8px 0;border-radius:6px}
 .act-btns{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-.act-card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
-.act-card:hover{border-color:var(--accent)}
-.act-card .act{border:0;border-radius:0}
-.act-card .act-btns{padding:0 14px 12px;gap:8px}
+.act.act-card{cursor:default}
+.act.act-card:hover{border-color:var(--line)}
+.act-btns.inline{display:inline-flex;gap:6px;flex-wrap:wrap}
+.act-btns.inline .btn{min-height:30px;padding:3px 12px;font-size:13.5px;border-radius:999px}
 .act-btns .btn:disabled{background:var(--paper);border-color:var(--line);color:var(--muted);opacity:1}
