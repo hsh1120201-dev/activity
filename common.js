@@ -104,5 +104,15 @@
     return f;
   };
   U.scoreOf = function (v) { var i = U.SCALE.indexOf(v); return i < 0 ? null : 5 - i; };
+  /* 信件格式（與 Code.gs 的 mailHtml_ 一致）：**粗體**、[文字](網址)、網址自動連結、單獨一行「-」是分隔線 */
+  U.mailHtml = function (text) {
+    var h = U.esc(text), links = [];
+    h = h.replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g, function (_, t, u) { links.push('<a href="' + u + '" target="_blank" rel="noopener">' + t + "</a>"); return "\u0000" + (links.length - 1) + "\u0000"; });
+    h = h.replace(/https?:\/\/[^\s<]+/g, function (u) { links.push('<a href="' + u + '" target="_blank" rel="noopener">' + u + "</a>"); return "\u0000" + (links.length - 1) + "\u0000"; });
+    h = h.replace(/\*\*([^*\n]+)\*\*/g, "<b>$1</b>");
+    h = h.replace(/^[ \t]*-[ \t]*$/gm, "<hr>");
+    h = h.replace(/\u0000(\d+)\u0000/g, function (_, i) { return links[+i]; });
+    return h.replace(/(<hr>)\n/g, "$1").replace(/\n/g, "<br>");
+  };
   U.SETUP_NOTE = '<div class="panel"><p><strong>尚未連接資料庫。</strong></p><p class="note">請照「設定步驟」把 Apps Script 網址填進 config.js，再重新整理這個頁面。</p></div>';
 })();

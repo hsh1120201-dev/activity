@@ -33,7 +33,7 @@
 (function () {
   "use strict";
   var $ = U.$, esc = U.esc;
-  var S = { token: "", acts: [], regs: [], fbs: [], mails: [], quota: null, sender: "", off: {}, counts: {}, loaded: false, tab: "acts", pick: "", busy: false };
+  var S = { token: "", acts: [], regs: [], fbs: [], mails: [], templates: [], quota: null, sender: "", off: {}, counts: {}, loaded: false, tab: "acts", pick: "", busy: false };
   try { S.token = sessionStorage.getItem("must-admin") || ""; } catch (e) {}
 
   function actById(id) { for (var i = 0; i < S.acts.length; i++) if (S.acts[i].id === id) return S.acts[i]; return null; }
@@ -48,10 +48,20 @@
       return '<span class="cnt" title="' + esc(m.subject) + '">' + (ok ? "✓ " : "✗ ") + esc(m.kind) + " " + esc(U.ftime(m.sentAt).slice(5)) + (ok ? "" : "（失敗）") + "</span>";
     }).join("<br>");
   }
-  var TAGS = ["姓名", "課程", "日期", "時間", "地點", "問卷連結"];
+  var TAGS = ["姓名", "課程", "日期", "月日", "時間", "地點", "問卷連結"];
+  var WD = ["日", "一", "二", "三", "四", "五", "六"];
+  function cDate(d, short) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d || "");
+    if (!m) return d || "";
+    var md = +m[2] + "月" + +m[3] + "日（" + WD[new Date(+m[1], +m[2] - 1, +m[3]).getDay()] + "）";
+    return short ? md : m[1] + "年" + md;
+  }
   function fillMail(text, a, r) {
-    var map = { "姓名": r.name, "課程": a.title, "日期": U.dparts(a.date).full, "時間": a.time, "地點": a.location, "問卷連結": fbLink(a.id) };
-    return String(text || "").replace(/\{(姓名|課程|日期|時間|地點|問卷連結)\}/g, function (_, k) { return map[k] || ""; });
+    var map = { "姓名": r.name, "課程": a.title, "日期": cDate(a.date), "月日": cDate(a.date, true), "時間": a.time, "地點": a.location, "問卷連結": fbLink(a.id) };
+    return String(text || "").replace(/\{(姓名|課程|日期|月日|時間|地點|問卷連結)\}/g, function (_, k) { return map[k] || ""; });
+  }
+  function tplOptions() {
+    return '<option value="">（選擇範本，會取代下面的主旨和內容）</option>' + S.templates.map(function (t) { return '<option value="' + esc(t.id) + '">' + esc(t.name) + "</option>"; }).join("");
   }
   function openMail() {
     var a = actById(S.pick), to = picked(S.pick);
@@ -59,12 +69,16 @@
     var draft = S.draft && S.draft.act === a.id ? S.draft : { subject: "【{課程}】活動通知", body: "{姓名} 您好：\n\n\n\n新竹社會創新基地\n電話｜03-5593142 分機 3514" };
     U.showDlg(U.head("寄信給報名者") + '<form id="mail-form" class="survey">' +
       '<div class="f"><span>收件人（' + to.length + " 位）</span><div class=\"fixed\">" + to.map(function (r) { return esc(r.name); }).join("、") + "</div></div>" +
+      '<div class="f"><span>信件範本</span><div class="row"><select id="m-tpl" style="flex:1 1 220px">' + tplOptions() + '</select>' +
+      '<button class="btn danger sm" type="button" data-deltpl hidden>刪除這個範本</button></div></div>' +
       U.fld("m-subject", "主旨", draft.subject, true, "text", ' maxlength="200"') +
-      '<label class="f" for="m-body"><span>內容 <i>*</i></span><textarea id="m-body" rows="10" maxlength="10000">' + esc(draft.body) + "</textarea></label>" +
+      '<label class="f" for="m-body"><span>內容 <i>*</i></span><textarea id="m-body" rows="14" maxlength="10000">' + esc(draft.body) + "</textarea></label>" +
+      '<p class="note" style="margin:-6px 0 0">格式：<code>**粗體**</code>　<code>[顯示文字](網址)</code> 變成連結　網址會自動變連結　單獨一行 <code>-</code> 是分隔線　可以直接貼上表情符號 😊</p>' +
       '<div class="f"><span>插入代換文字（每個人會換成自己的資料）</span><div class="choices">' +
       TAGS.map(function (t) { return '<button class="btn ghost sm" type="button" data-tag="' + t + '">{' + t + "}</button>"; }).join("") + "</div></div>" +
-      '<div class="f"><span>預覽（以「' + esc(to[0].name) + '」為例）</span><div class="mailprev"><b id="m-pv-s"></b><pre id="m-pv-b"></pre></div></div>' +
+      '<div class="f"><span>預覽（以「' + esc(to[0].name) + '」為例）</span><div class="mailprev"><b id="m-pv-s"></b><div id="m-pv-b" class="mailbody"></div></div></div>' +
       '<p class="note">寄件人：' + esc(S.sender || "新竹社會創新基地") + "（從部署 Apps Script 的 Gmail 帳號寄出）" + (S.quota != null ? "。今天還能寄 " + S.quota + " 封。" : "") + "</p>" +
+      '<div class="row"><input type="text" id="m-tplname" maxlength="40" placeholder="範本名稱，例如：課前提醒" aria-label="範本名稱" style="flex:1 1 200px"><button class="btn ghost sm" type="button" data-savetpl>把目前內容存成範本</button></div>' +
       '<div class="row"><button class="btn" type="submit" id="m-send">寄出 ' + to.length + ' 封信</button><button class="btn ghost" type="button" data-close>取消</button></div></form>');
     mailPreview();
   }
@@ -72,7 +86,7 @@
     var a = actById(S.pick), r = picked(S.pick)[0];
     if (!a || !r || !$("m-pv-s")) return;
     $("m-pv-s").textContent = fillMail($("m-subject").value, a, r);
-    $("m-pv-b").textContent = fillMail($("m-body").value, a, r);
+    $("m-pv-b").innerHTML = U.mailHtml(fillMail($("m-body").value, a, r));
     S.draft = { act: a.id, subject: $("m-subject").value, body: $("m-body").value };
   }
   function sendMail(f) {
@@ -153,15 +167,15 @@
   function load() {
     return call("adminData").then(function (j) {
       S.acts = j.activities || []; S.regs = j.registrations || []; S.fbs = j.feedback || [];
-      S.mails = j.mails || []; S.quota = j.mailQuota == null ? null : j.mailQuota; S.sender = j.sender || "";
+      S.mails = j.mails || []; S.templates = j.templates || []; S.quota = j.mailQuota == null ? null : j.mailQuota; S.sender = j.sender || "";
       S.counts = {}; S.regs.forEach(function (r) { S.counts[r.activityId] = (S.counts[r.activityId] || 0) + 1; });
       S.loaded = true; render();
     });
   }
-  function act(fn, okMsg) {
+  function act(fn, okMsg, reopenMail) {
     if (S.busy) return;
     S.busy = true;
-    fn().then(function () { U.toast(okMsg); U.closeDlg(); return load(); })
+    fn().then(function () { U.toast(okMsg); U.closeDlg(); return load().then(function () { if (reopenMail) openMail(); }); })
       .catch(function (e) { if (e.code !== "auth") U.toast(e.message); })
       .then(function () { S.busy = false; });
   }
@@ -281,7 +295,7 @@
     }
   });
   document.addEventListener("click", function (e) {
-    var t = e.target.closest("[data-close],[data-tab],[data-logout],[data-new],[data-edit],[data-del],[data-rm],[data-csv],[data-copy],[data-fbcsv],[data-copylink],[data-noimg],[data-mail],[data-tag]");
+    var t = e.target.closest("[data-close],[data-tab],[data-logout],[data-new],[data-edit],[data-del],[data-rm],[data-csv],[data-copy],[data-fbcsv],[data-copylink],[data-noimg],[data-mail],[data-tag],[data-savetpl],[data-deltpl]");
     if (!t) { if (e.target === $("dlg")) U.closeDlg(); return; }
     var d = t.dataset;
     if (d.close !== undefined) U.closeDlg();
@@ -301,6 +315,18 @@
     } else if (d.fbcsv !== undefined) {
       var a2 = actById(S.pick);
       download(fbRowsOf(S.pick), "課程滿意度-" + ((a2 && a2.title) || "活動"));
+    } else if (d.savetpl !== undefined) {
+      var tn = $("m-tplname").value.trim();
+      if (!tn) { U.toast("請先輸入範本名稱。"); $("m-tplname").focus(); return; }
+      var exists = S.templates.some(function (x) { return x.name === tn; });
+      if (exists && d.sure !== "1") { d.sure = "1"; t.textContent = "已有同名範本，再按一次覆蓋"; return; }
+      mailPreview();
+      act(function () { return call("saveTemplate", { name: tn, subject: $("m-subject").value, body: $("m-body").value }); }, "範本「" + tn + "」已儲存。", true);
+    } else if (d.deltpl !== undefined) {
+      var tid = $("m-tpl").value; if (!tid) return;
+      if (d.sure !== "1") { d.sure = "1"; t.textContent = "確定刪除？"; return; }
+      mailPreview();
+      act(function () { return call("deleteTemplate", { id: tid }); }, "範本已刪除。", true);
     } else if (d.mail !== undefined) {
       openMail();
     } else if (d.tag !== undefined) {
@@ -319,6 +345,11 @@
   document.addEventListener("input", function (e) { if (e.target.id === "m-subject" || e.target.id === "m-body") mailPreview(); });
   document.addEventListener("change", function (e) {
     if (e.target.id === "a-pick") { S.pick = e.target.value; render(); }
+    else if (e.target.id === "m-tpl") {
+      var tp = S.templates.filter(function (x) { return x.id === e.target.value; })[0];
+      var del = document.querySelector("[data-deltpl]"); if (del) { del.hidden = !tp; del.dataset.sure = ""; del.textContent = "刪除這個範本"; }
+      if (tp) { $("m-subject").value = tp.subject; $("m-body").value = tp.body; $("m-tplname").value = tp.name; mailPreview(); }
+    }
     else if (e.target.id === "pick-all") { var on = e.target.checked; regsFor(S.pick).forEach(function (r) { if (on) delete S.off[r.id]; else S.off[r.id] = true; }); render(); }
     else if (e.target.dataset && e.target.dataset.pickone) { if (e.target.checked) delete S.off[e.target.dataset.pickone]; else S.off[e.target.dataset.pickone] = true; render(); }
     else if (e.target.id === "e-file" && e.target.files[0]) uploadImage(e.target.files[0], e.target);
