@@ -53,14 +53,27 @@
     var d = U.dparts(a.date);
     var meta = [a.semester, a.time, a.location].filter(Boolean).map(esc).join(" · ");
     var chip = a.status === "open" && isFull(a) ? "額滿" : "";
-    return '<button class="act" type="button" data-act="' + esc(a.id) + '">' +
+    return '<div class="act-card"><button class="act" type="button" data-act="' + esc(a.id) + '">' +
       '<span class="date"><b>' + esc(d.md) + "</b><i>" + esc(d.wd) + "</i></span>" +
       '<span class="body"><span class="t">' + esc(a.title || "未命名活動") + "</span>" +
       (meta ? '<span class="m">' + meta + "</span>" : "") +
       '<span class="tags"><span class="pill ' + esc(a.status) + '">' + esc(U.STATUS[a.status] || "") + "</span>" +
       (chip ? '<span class="chip">' + chip + "</span>" : "") +
       '<span class="cnt">' + esc(U.capText(a, S.counts)) + "</span></span></span>" +
-      (a.image ? '<span class="thumb"><img src="' + esc(a.image) + '" alt="" loading="lazy" onerror="this.parentNode.remove()"></span>' : "") + "</button>";
+      (a.image ? '<span class="thumb"><img src="' + esc(a.image) + '" alt="" loading="lazy" onerror="this.parentNode.remove()"></span>' : "") + "</button>" +
+      actBtns(a) + "</div>";
+  }
+
+  /* 報名、回饋兩顆獨立按鈕：一直顯示，沒開放的那顆反灰不能按 */
+  function actBtns(a, view) {
+    var regOn = a.status === "open", fbOn = a.status === "feedback";
+    function b(kind, on, label, offLabel) {
+      return '<button class="btn sm' + (view && view !== kind ? " ghost" : "") + '" type="button" data-view="' + kind + '" data-id="' + esc(a.id) + '"' +
+        (on ? "" : " disabled") + (view ? ' aria-pressed="' + (view === kind) + '"' : "") + ">" + (on ? label : offLabel) + "</button>";
+    }
+    return '<div class="act-btns" role="group" aria-label="報名或填寫回饋">' +
+      b("reg", regOn, "我要報名", a.status === "closed" || fbOn ? "報名已截止" : "尚未開放報名") +
+      b("fb", fbOn, "填寫回饋", a.status === "closed" ? "回饋已關閉" : "回饋尚未開放") + "</div>";
   }
 
   function render() {
@@ -101,10 +114,7 @@
       (a.location ? "<dt>地點</dt><dd>" + esc(a.location) + "</dd>" : "") +
       (a.semester ? "<dt>類別</dt><dd>" + esc(a.semester) + "</dd>" : "") + "</dl>" +
       (a.description ? '<p class="desc">' + esc(a.description) + "</p>" : "") +
-      '<div class="act-btns" role="group" aria-label="選擇要報名或填寫回饋">' +
-      '<button class="btn' + (view === "reg" ? "" : " ghost") + '" type="button" data-view="reg" data-id="' + esc(id) + '" aria-pressed="' + (view === "reg") + '">我要報名</button>' +
-      '<button class="btn' + (view === "fb" ? "" : " ghost") + '" type="button" data-view="fb" data-id="' + esc(id) + '" aria-pressed="' + (view === "fb") + '">填寫回饋</button>' +
-      "</div><hr>";
+      actBtns(a, view) + "<hr>";
 
     if (view === "reg") h += regSection(a);
     else if (view === "fb") h += fbSection(a);
