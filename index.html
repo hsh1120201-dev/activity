@@ -157,7 +157,7 @@
   function surveyForm(id) {
     var n = 0, sv = U.SURVEY;
     var h = '<form id="fb-form" class="survey" data-id="' + esc(id) + '" novalidate>' +
-      '<h4 style="margin:0;font-size:18px">' + esc(sv.title) + "</h4>" +
+      '<h4 style="margin:0;font-size:1.125rem">' + esc(sv.title) + "</h4>" +
       '<div class="sv-intro"><p>' + esc(sv.intro) + '</p><p class="note">' + esc(sv.contact).replace(/\n/g, "<br>") + "</p></div>";
     sv.items.forEach(function (it) {
       if (it.type === "note") { h += '<div class="sv-note">' + esc(it.text) + "</div>"; return; }
