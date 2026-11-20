@@ -215,7 +215,7 @@ code{font-size:0.7812rem;padding:1px 5px;border-radius:5px;background:var(--pape
   .list > .panel{grid-column:1 / -1}
 }
 /* 大標題自適應：手機分兩行、字級跟著螢幕寬度縮放；寬螢幕合成一行 */
-.hero-title{font-size:clamp(1.6rem,9vw,3rem);line-height:1.3}
+.hero-title{font-size:20px;line-height:1.4}
 .hero-title span{display:block}
 .hero-title span + span{margin-top:.15em}
 @media (min-width:700px){
