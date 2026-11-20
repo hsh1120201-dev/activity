@@ -177,8 +177,8 @@
     S.busy = true;
     var btn = form.querySelector('button[type="submit"]'), label = btn.textContent;
     btn.disabled = true; btn.textContent = "處理中…";
-    U.api(action, data).then(function () {
-      U.toast(okMsg);
+    U.api(action, data).then(function (j) {
+      U.toast(typeof okMsg === "function" ? okMsg(j) : okMsg);
       if (after) after();
       return load().then(function () { U.closeDlg(); });
     }, function (e) { U.toast(e.message); btn.disabled = false; btn.textContent = label; })
@@ -202,7 +202,7 @@
         return;
       }
       run(f, "register", { activityId: id, studentId: sid, name: nm, contact: mail, gender: g.value, age: ag.value,
-        note: $("r-note").value.trim() }, "報名成功。", function () { remember(sid); });
+        note: $("r-note").value.trim() }, "報名成功！", function () { remember(sid); });
     } else if (f.id === "cancel-form") {
       run(f, "cancel", { activityId: id, studentId: $("c-sid").value.trim(), name: $("c-name").value.trim() }, "已取消報名。");
     } else if (f.id === "fb-form") {

@@ -33,12 +33,65 @@
 (function () {
   "use strict";
   var $ = U.$, esc = U.esc;
-  var S = { token: "", acts: [], regs: [], fbs: [], counts: {}, loaded: false, tab: "acts", pick: "", busy: false };
+  var S = { token: "", acts: [], regs: [], fbs: [], mails: [], quota: null, sender: "", off: {}, counts: {}, loaded: false, tab: "acts", pick: "", busy: false };
   try { S.token = sessionStorage.getItem("must-admin") || ""; } catch (e) {}
 
   function actById(id) { for (var i = 0; i < S.acts.length; i++) if (S.acts[i].id === id) return S.acts[i]; return null; }
   function regsFor(id) { return S.regs.filter(function (r) { return r.activityId === id; }).sort(function (a, b) { return (a.createdAt || "") < (b.createdAt || "") ? -1 : 1; }); }
   function fbFor(id) { return S.fbs.filter(function (f) { return f.activityId === id; }); }
+  function picked(id) { return regsFor(id).filter(function (r) { return !S.off[r.id]; }); }
+  function mailCell(id, r) {
+    var ms = S.mails.filter(function (m) { return m.activityId === id && m.to === r.contact && m.name === r.name; });
+    if (!ms.length) return '<span class="cnt">—</span>';
+    return ms.slice(-3).map(function (m) {
+      var ok = m.status === "已寄出";
+      return '<span class="cnt" title="' + esc(m.subject) + '">' + (ok ? "✓ " : "✗ ") + esc(m.kind) + " " + esc(U.ftime(m.sentAt).slice(5)) + (ok ? "" : "（失敗）") + "</span>";
+    }).join("<br>");
+  }
+  var TAGS = ["姓名", "課程", "日期", "時間", "地點", "問卷連結"];
+  function fillMail(text, a, r) {
+    var map = { "姓名": r.name, "課程": a.title, "日期": U.dparts(a.date).full, "時間": a.time, "地點": a.location, "問卷連結": fbLink(a.id) };
+    return String(text || "").replace(/\{(姓名|課程|日期|時間|地點|問卷連結)\}/g, function (_, k) { return map[k] || ""; });
+  }
+  function openMail() {
+    var a = actById(S.pick), to = picked(S.pick);
+    if (!a || !to.length) return;
+    var draft = S.draft && S.draft.act === a.id ? S.draft : { subject: "【{課程}】活動通知", body: "{姓名} 您好：\n\n\n\n新竹社會創新基地\n電話｜03-5593142 分機 3514" };
+    U.showDlg(U.head("寄信給報名者") + '<form id="mail-form" class="survey">' +
+      '<div class="f"><span>收件人（' + to.length + " 位）</span><div class=\"fixed\">" + to.map(function (r) { return esc(r.name); }).join("、") + "</div></div>" +
+      U.fld("m-subject", "主旨", draft.subject, true, "text", ' maxlength="200"') +
+      '<label class="f" for="m-body"><span>內容 <i>*</i></span><textarea id="m-body" rows="10" maxlength="10000">' + esc(draft.body) + "</textarea></label>" +
+      '<div class="f"><span>插入代換文字（每個人會換成自己的資料）</span><div class="choices">' +
+      TAGS.map(function (t) { return '<button class="btn ghost sm" type="button" data-tag="' + t + '">{' + t + "}</button>"; }).join("") + "</div></div>" +
+      '<div class="f"><span>預覽（以「' + esc(to[0].name) + '」為例）</span><div class="mailprev"><b id="m-pv-s"></b><pre id="m-pv-b"></pre></div></div>' +
+      '<p class="note">寄件人：' + esc(S.sender || "新竹社會創新基地") + "（從部署 Apps Script 的 Gmail 帳號寄出）" + (S.quota != null ? "。今天還能寄 " + S.quota + " 封。" : "") + "</p>" +
+      '<div class="row"><button class="btn" type="submit" id="m-send">寄出 ' + to.length + ' 封信</button><button class="btn ghost" type="button" data-close>取消</button></div></form>');
+    mailPreview();
+  }
+  function mailPreview() {
+    var a = actById(S.pick), r = picked(S.pick)[0];
+    if (!a || !r || !$("m-pv-s")) return;
+    $("m-pv-s").textContent = fillMail($("m-subject").value, a, r);
+    $("m-pv-b").textContent = fillMail($("m-body").value, a, r);
+    S.draft = { act: a.id, subject: $("m-subject").value, body: $("m-body").value };
+  }
+  function sendMail(f) {
+    var to = picked(S.pick), btn = $("m-send");
+    var subject = $("m-subject").value.trim(), body = $("m-body").value;
+    if (!subject || !body.trim()) { U.toast("請填寫主旨和內容。"); return; }
+    if (btn.dataset.sure !== "1") { btn.dataset.sure = "1"; btn.textContent = "確定寄給 " + to.length + " 人？再按一次"; return; }
+    if (S.busy) return;
+    S.busy = true; btn.disabled = true; btn.textContent = "寄送中，請不要關閉視窗…";
+    call("sendMail", { activityId: S.pick, ids: to.map(function (r) { return r.id; }), subject: subject, body: body, surveyUrl: fbLink(S.pick) })
+      .then(function (j) {
+        S.draft = null; U.closeDlg();
+        U.toast("已寄出 " + j.sent + " 封" + (j.failed && j.failed.length ? "，失敗 " + j.failed.length + " 封：" + j.failed.join("、") : "。"));
+        return load();
+      }, function (e) {
+        if (e.code !== "auth") U.toast(e.message);
+        btn.disabled = false; btn.dataset.sure = ""; btn.textContent = "寄出 " + to.length + " 封信";
+      }).then(function () { S.busy = false; });
+  }
   function fbLink(id) { return new URL("./", location.href).href + "#fb-" + id; }
   function avg(list) { return list.length ? list.reduce(function (a, b) { return a + b; }, 0) / list.length : null; }
   function bar(p) { return '<span class="bar"><i style="width:' + Math.round(p * 100) + '%"></i></span>'; }
@@ -100,6 +153,7 @@
   function load() {
     return call("adminData").then(function (j) {
       S.acts = j.activities || []; S.regs = j.registrations || []; S.fbs = j.feedback || [];
+      S.mails = j.mails || []; S.quota = j.mailQuota == null ? null : j.mailQuota; S.sender = j.sender || "";
       S.counts = {}; S.regs.forEach(function (r) { S.counts[r.activityId] = (S.counts[r.activityId] || 0) + 1; });
       S.loaded = true; render();
     });
@@ -145,14 +199,18 @@
       h += '<div class="panel"><p class="note">還沒有活動。先到「活動管理」新增。</p></div>';
     } else if (S.tab === "regs") {
       h += picker();
-      var id = S.pick, rs = regsFor(id);
+      var id = S.pick, rs = regsFor(id), nSel = picked(id).length;
       h += '<div class="row" style="margin-bottom:12px"><span class="cnt">' + esc(U.capText(actById(id), S.counts)) + "</span>" +
-        (rs.length ? '<button class="btn ghost sm" type="button" data-csv>下載 CSV</button><button class="btn ghost sm" type="button" data-copy>複製名單</button>' : "") + "</div>";
-      h += rs.length ? '<div class="scroll"><table><thead><tr><th>#</th><th>姓名</th><th>電話號碼</th><th>Gmail</th><th>性別</th><th>年齡區間</th><th>有什麼想對我們說</th><th>報名時間</th><th></th></tr></thead><tbody>' +
+        (rs.length ? '<button class="btn sm" type="button" data-mail' + (nSel ? "" : " disabled") + ">寄信給勾選的人（" + nSel + "）</button>" +
+          '<button class="btn ghost sm" type="button" data-csv>下載 CSV</button><button class="btn ghost sm" type="button" data-copy>複製名單</button>' : "") + "</div>";
+      h += rs.length ? '<div class="scroll"><table><thead><tr><th><input type="checkbox" id="pick-all" aria-label="全選"' + (nSel === rs.length ? " checked" : "") + '></th><th>#</th><th>姓名</th><th>電話號碼</th><th>Gmail</th><th>性別</th><th>年齡區間</th><th>有什麼想對我們說</th><th>報名時間</th><th>寄信紀錄</th><th></th></tr></thead><tbody>' +
         rs.map(function (r, i) {
-          return "<tr><td>" + (i + 1) + "</td><td>" + esc(r.name) + "</td><td>" + esc(r.studentId) + "</td><td>" + esc(r.contact) + "</td><td>" + esc(r.gender) + "</td><td>" + esc(r.age) + '</td><td class="wrapc">' + esc(r.note) + "</td><td>" + esc(U.ftime(r.createdAt)) + "</td>" +
+          return '<tr><td><input type="checkbox" data-pickone="' + esc(r.id) + '" aria-label="勾選 ' + esc(r.name) + '"' + (S.off[r.id] ? "" : " checked") + "></td><td>" + (i + 1) + "</td><td>" + esc(r.name) + "</td><td>" + esc(r.studentId) + "</td><td>" + esc(r.contact) + "</td><td>" + esc(r.gender) + "</td><td>" + esc(r.age) + '</td><td class="wrapc">' + esc(r.note) + "</td><td>" + esc(U.ftime(r.createdAt)) + '</td><td class="wrapc">' + mailCell(id, r) + "</td>" +
             '<td><button class="btn danger sm" type="button" data-rm="' + esc(r.id) + '">移除</button></td></tr>';
-        }).join("") + "</tbody></table></div>" : '<div class="panel"><p class="note">這個活動還沒有人報名。</p></div>';
+        }).join("") + "</tbody></table></div>" +
+        '<p class="note" style="margin-top:10px">' +
+        (S.quota != null ? "今天還能寄 " + S.quota + " 封信。" : "勾選報名者後，可以按「寄信給勾選的人」。") + "</p>"
+        : '<div class="panel"><p class="note">這個活動還沒有人報名。</p></div>';
     } else {
       h += picker();
       h += fbReport(S.pick);
@@ -212,6 +270,8 @@
         try { sessionStorage.setItem("must-admin", S.token); } catch (x) {}
         render(); return load();
       }).catch(function (x) { U.toast(x.message); }).then(function () { S.busy = false; });
+    } else if (f.id === "mail-form") {
+      sendMail(f);
     } else if (f.id === "act-form") {
       var a = { id: f.dataset.id, title: $("e-title").value.trim(), semester: $("e-sem").value.trim(), date: $("e-date").value, time: $("e-time").value.trim(),
         location: $("e-loc").value.trim(), capacity: parseInt($("e-cap").value, 10) || 0, status: $("e-status").value, description: $("e-desc").value.trim(), image: $("e-image").value };
@@ -221,7 +281,7 @@
     }
   });
   document.addEventListener("click", function (e) {
-    var t = e.target.closest("[data-close],[data-tab],[data-logout],[data-new],[data-edit],[data-del],[data-rm],[data-csv],[data-copy],[data-fbcsv],[data-copylink],[data-noimg]");
+    var t = e.target.closest("[data-close],[data-tab],[data-logout],[data-new],[data-edit],[data-del],[data-rm],[data-csv],[data-copy],[data-fbcsv],[data-copylink],[data-noimg],[data-mail],[data-tag]");
     if (!t) { if (e.target === $("dlg")) U.closeDlg(); return; }
     var d = t.dataset;
     if (d.close !== undefined) U.closeDlg();
@@ -241,6 +301,12 @@
     } else if (d.fbcsv !== undefined) {
       var a2 = actById(S.pick);
       download(fbRowsOf(S.pick), "課程滿意度-" + ((a2 && a2.title) || "活動"));
+    } else if (d.mail !== undefined) {
+      openMail();
+    } else if (d.tag !== undefined) {
+      var ta = $("m-body"), tag = "{" + d.tag + "}", st = ta.selectionStart || 0, en = ta.selectionEnd || 0;
+      ta.value = ta.value.slice(0, st) + tag + ta.value.slice(en); ta.focus(); ta.selectionStart = ta.selectionEnd = st + tag.length;
+      mailPreview();
     } else if (d.noimg !== undefined) {
       $("e-image").value = ""; $("e-preview").innerHTML = '<span class="note">尚未上傳圖片</span>'; t.hidden = true;
     } else if (d.copylink !== undefined) {
@@ -250,8 +316,11 @@
       navigator.clipboard.writeText(text).then(function () { U.toast("名單已複製，可直接貼到試算表。"); }, function () { U.toast("無法複製，請改用下載 CSV。"); });
     }
   });
+  document.addEventListener("input", function (e) { if (e.target.id === "m-subject" || e.target.id === "m-body") mailPreview(); });
   document.addEventListener("change", function (e) {
     if (e.target.id === "a-pick") { S.pick = e.target.value; render(); }
+    else if (e.target.id === "pick-all") { var on = e.target.checked; regsFor(S.pick).forEach(function (r) { if (on) delete S.off[r.id]; else S.off[r.id] = true; }); render(); }
+    else if (e.target.dataset && e.target.dataset.pickone) { if (e.target.checked) delete S.off[e.target.dataset.pickone]; else S.off[e.target.dataset.pickone] = true; render(); }
     else if (e.target.id === "e-file" && e.target.files[0]) uploadImage(e.target.files[0], e.target);
   });
 

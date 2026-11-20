@@ -177,3 +177,7 @@ input[type=tel],input[type=email],input[type=password]{width:100%;min-height:46p
 .imgprev img{display:block;max-width:100%;max-height:220px;border-radius:6px}
 label.btn{cursor:pointer}
 @media (max-width:420px){.act .thumb{flex-basis:72px}}
+.mailprev{border:1px solid var(--line);border-radius:10px;background:var(--paper);padding:12px 14px;display:flex;flex-direction:column;gap:8px}
+.mailprev pre{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;font-family:var(--body);font-size:14.5px;line-height:1.6}
+td input[type=checkbox],th input[type=checkbox]{width:18px;height:18px;accent-color:var(--accent)}
+.btn.sm[disabled]{opacity:.5}
