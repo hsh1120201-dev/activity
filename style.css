@@ -24,7 +24,7 @@
 *{box-sizing:border-box}
 html,body{margin:0}
 /* 字級自適應：手機 16px，隨螢幕變寬逐步放大到 18px，全站字級都以 rem 跟著縮放 */
-html{font-size:clamp(16px,15px + .2vw,18px)}
+html{font-size:clamp(15px,14.4px + .15vw,17px)}
 body{background:var(--paper);color:var(--ink);font-family:var(--body);font-size:1rem;line-height:1.6;-webkit-text-size-adjust:100%}
 button,input,select,textarea{font:inherit;color:inherit}
 :focus-visible{outline:3px solid var(--mark);outline-offset:2px}
@@ -198,7 +198,8 @@ code{font-size:0.7812rem;padding:1px 5px;border-radius:5px;background:var(--pape
 /* 手機：按鈕放大、平均分配，方便手指點按 */
 @media (max-width:520px){
   .act-btns.inline{display:flex;width:100%}
-  .act-btns.inline .btn{flex:1 1 0;min-height:40px;font-size:0.875rem}
+  .act-btns.inline .btn{flex:1 1 0;min-height:36px;font-size:0.875rem}
+  .hero{padding:20px 0 4px}
   .act .date{flex-basis:64px}
   .act .date b{font-size:1.25rem}
 }
@@ -215,12 +216,14 @@ code{font-size:0.7812rem;padding:1px 5px;border-radius:5px;background:var(--pape
   .list > .panel{grid-column:1 / -1}
 }
 /* 大標題自適應：手機分兩行、字級跟著螢幕寬度縮放；寬螢幕合成一行 */
-.hero-title{font-size:clamp(1.6rem,9vw,3rem);line-height:1.3}
+.hero-title{font-size:clamp(1.5rem,7.4vw,2.5rem);line-height:1.3}
 .hero-title span{display:block}
 .hero-title span + span{margin-top:.15em}
 @media (min-width:700px){
-  .hero-title{font-size:clamp(2.25rem,4.6vw,3.5rem)}
+  .hero-title{font-size:clamp(2rem,3.6vw,2.9rem)}
   .hero-title{white-space:nowrap}
   .hero-title span{display:inline}
   .hero-title span + span{margin:0 0 0 .3em}
 }
+/* 輸入框維持 16px，避免 iPhone 點輸入框時自動放大畫面 */
+input,select,textarea{font-size:max(16px,1rem)}
