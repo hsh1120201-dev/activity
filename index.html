@@ -88,8 +88,10 @@
   }
   function remember(sid) { S.sid = sid; try { localStorage.setItem("must-sid", sid); } catch (e) {} }
 
-  function openAct(id) {
+  /* 報名與回饋是兩個獨立按鈕：view 為 "reg"（報名）或 "fb"（回饋），沒指定時依活動狀態決定先顯示哪一個 */
+  function openAct(id, view) {
     var a = actById(id); if (!a) { U.closeDlg(); return; }
+    if (view !== "reg" && view !== "fb") view = a.status === "feedback" ? "fb" : a.status === "open" ? "reg" : "";
     var d = U.dparts(a.date);
     var h = U.head(a.title || "未命名活動") +
       (a.image ? '<a class="poster" href="' + esc(a.image) + '" target="_blank" rel="noopener"><img src="' + esc(a.image) + '" alt="' + esc(a.title || "活動圖片") + '" onerror="this.parentNode.remove()"></a>' : "") +
@@ -98,30 +100,43 @@
       (a.time ? "<dt>時間</dt><dd>" + esc(a.time) + "</dd>" : "") +
       (a.location ? "<dt>地點</dt><dd>" + esc(a.location) + "</dd>" : "") +
       (a.semester ? "<dt>類別</dt><dd>" + esc(a.semester) + "</dd>" : "") + "</dl>" +
-      (a.description ? '<p class="desc">' + esc(a.description) + "</p>" : "") + "<hr>";
+      (a.description ? '<p class="desc">' + esc(a.description) + "</p>" : "") +
+      '<div class="act-btns" role="group" aria-label="選擇要報名或填寫回饋">' +
+      '<button class="btn' + (view === "reg" ? "" : " ghost") + '" type="button" data-view="reg" data-id="' + esc(id) + '" aria-pressed="' + (view === "reg") + '">我要報名</button>' +
+      '<button class="btn' + (view === "fb" ? "" : " ghost") + '" type="button" data-view="fb" data-id="' + esc(id) + '" aria-pressed="' + (view === "fb") + '">填寫回饋</button>' +
+      "</div><hr>";
 
+    if (view === "reg") h += regSection(a);
+    else if (view === "fb") h += fbSection(a);
+    else h += '<p class="note">這個活動已結束。</p>';
+    U.showDlg(h);
+  }
+
+  function regSection(a) {
+    var id = a.id;
     var cancelBox = '<details><summary>已經報名，想取消？</summary><form id="cancel-form" data-id="' + esc(id) + '" style="margin-top:12px">' +
       '<div class="grid2">' + U.fld("c-sid", "報名時填寫的電話號碼", S.sid, true, "tel", ' maxlength="20" autocomplete="tel"') + U.fld("c-name", "報名時填寫的姓名", "", true, "text", ' maxlength="40"') + "</div>" +
       '<button class="btn danger" type="submit">取消報名</button></form></details>';
-    if (a.status === "open") {
-      if (isFull(a)) h += '<div class="warn">這個活動已額滿。有人取消時，名額會重新開放。</div>';
-      else h += '<form id="reg-form" class="survey" data-id="' + esc(id) + '" novalidate>' +
-        U.fld("r-name", "您的姓名：", "", true, "text", ' maxlength="40" autocomplete="name"') +
-        U.fld("r-sid", "您的電話號碼（僅做為聯繫用途）：", S.sid, true, "tel", ' maxlength="20" autocomplete="tel"') +
-        U.fld("r-contact", "您的 Gmail（僅做為聯繫用途）：", "", true, "email", ' maxlength="80" autocomplete="email" placeholder="example@gmail.com"') +
-        '<fieldset class="mrow" data-row="r-gender"><legend class="f"><span>性別： <i>*</i></span></legend><div class="choices">' + ["男性", "女性", "其他"].map(function (o) { return opt("r-gender", o); }).join("") + "</div></fieldset>" +
-        '<fieldset class="mrow" data-row="r-age"><legend class="f"><span>您的年齡區間： <i>*</i></span></legend><div class="choices free">' + ["18歲以下", "18-25歲", "25-35歲", "35-45歲", "45-55歲", "55歲以上"].map(function (o) { return opt("r-age", o); }).join("") + "</div></fieldset>" +
-        '<div class="f"><span>你要報名的課程：</span><div class="fixed">' + esc(a.title || "未命名活動") + "</div></div>" +
-        '<label class="f" for="r-note"><span>有什麼想對我們說：</span><textarea id="r-note" maxlength="500"></textarea></label>' +
-        '<button class="btn" type="submit">送出報名</button>' +
-        '<p class="note">電話與 Gmail 僅做為聯繫用途。</p></form>';
-      h += "<hr>" + cancelBox;
-    } else if (a.status === "feedback") {
-      h += fbDone(id) ? '<div class="ok">感謝您填寫課程滿意度調查！</div>' : surveyForm(id);
-    } else {
-      h += '<p class="note">這個活動已結束。</p>';
-    }
-    U.showDlg(h);
+    if (a.status !== "open") return '<p class="note">這個活動目前沒有開放報名。</p>';
+    var h = "";
+    if (isFull(a)) h += '<div class="warn">這個活動已額滿。有人取消時，名額會重新開放。</div>';
+    else h += '<form id="reg-form" class="survey" data-id="' + esc(id) + '" novalidate>' +
+      U.fld("r-name", "您的姓名：", "", true, "text", ' maxlength="40" autocomplete="name"') +
+      U.fld("r-sid", "您的電話號碼（僅做為聯繫用途）：", S.sid, true, "tel", ' maxlength="20" autocomplete="tel"') +
+      U.fld("r-contact", "您的 Gmail（僅做為聯繫用途）：", "", true, "email", ' maxlength="80" autocomplete="email" placeholder="example@gmail.com"') +
+      '<fieldset class="mrow" data-row="r-gender"><legend class="f"><span>性別： <i>*</i></span></legend><div class="choices">' + ["男性", "女性", "其他"].map(function (o) { return opt("r-gender", o); }).join("") + "</div></fieldset>" +
+      '<fieldset class="mrow" data-row="r-age"><legend class="f"><span>您的年齡區間： <i>*</i></span></legend><div class="choices free">' + ["18歲以下", "18-25歲", "25-35歲", "35-45歲", "45-55歲", "55歲以上"].map(function (o) { return opt("r-age", o); }).join("") + "</div></fieldset>" +
+      '<div class="f"><span>你要報名的課程：</span><div class="fixed">' + esc(a.title || "未命名活動") + "</div></div>" +
+      '<label class="f" for="r-note"><span>有什麼想對我們說：</span><textarea id="r-note" maxlength="500"></textarea></label>' +
+      '<button class="btn" type="submit">送出報名</button>' +
+      '<p class="note">電話與 Gmail 僅做為聯繫用途。</p></form>';
+    return h + "<hr>" + cancelBox;
+  }
+
+  function fbSection(a) {
+    if (a.status === "feedback") return fbDone(a.id) ? '<div class="ok">感謝您填寫課程滿意度調查！</div>' : surveyForm(a.id);
+    if (a.status === "open") return '<p class="note">回饋問卷會在活動結束後開放填寫，到時再回來這裡填寫即可。</p>';
+    return '<p class="note">這個活動的回饋問卷已關閉。</p>';
   }
 
   function fbDone(id) { try { return localStorage.getItem("hub-fb-" + id) === "1"; } catch (e) { return false; } }
@@ -214,9 +229,10 @@
     }
   });
   document.addEventListener("click", function (e) {
-    var t = e.target.closest("[data-act],[data-close],[data-reload]");
+    var t = e.target.closest("[data-act],[data-view],[data-close],[data-reload]");
     if (!t) { if (e.target === $("dlg")) U.closeDlg(); return; }
     if (t.dataset.act !== undefined) openAct(t.dataset.act);
+    else if (t.dataset.view !== undefined) openAct(t.dataset.id, t.dataset.view);
     else if (t.dataset.close !== undefined) U.closeDlg();
     else { S.error = ""; render(); load(); }
   });
@@ -232,10 +248,10 @@
     box.querySelector("output").textContent = e.target.value + " 分";
     var sq = e.target.closest(".sv-q"); if (sq) sq.classList.remove("miss");
   });
-  /* 回饋問卷直連：網址加上 #fb-活動編號 會直接打開該活動的問卷，可做成 QR Code 放在現場 */
+  /* 直連：網址加上 #fb-活動編號 直接打開回饋問卷，#reg-活動編號 直接打開報名表，可做成 QR Code 放在現場 */
   function openFromHash() {
-    var m = /^#fb-([A-Za-z0-9]+)$/.exec(location.hash || "");
-    if (m && actById(m[1])) openAct(m[1]);
+    var m = /^#(fb|reg)-([A-Za-z0-9]+)$/.exec(location.hash || "");
+    if (m && actById(m[2])) openAct(m[2], m[1]);
   }
   window.addEventListener("hashchange", openFromHash);
 
