@@ -107,6 +107,7 @@
   /* 信件格式（與 Code.gs 的 mailHtml_ 一致）：**粗體**、[文字](網址)、網址自動連結、單獨一行「-」是分隔線 */
   U.mailHtml = function (text) {
     var h = U.esc(text), links = [];
+    h = h.replace(/!\[([^\]\n]*)\]\((https:\/\/[^\s)]+)\)/g, function (_, t, u) { links.push('<img src="' + u + '" alt="' + t + '">'); return "\u0000" + (links.length - 1) + "\u0000"; });
     h = h.replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g, function (_, t, u) { links.push('<a href="' + u + '" target="_blank" rel="noopener">' + t + "</a>"); return "\u0000" + (links.length - 1) + "\u0000"; });
     h = h.replace(/https?:\/\/[^\s<]+/g, function (u) { links.push('<a href="' + u + '" target="_blank" rel="noopener">' + u + "</a>"); return "\u0000" + (links.length - 1) + "\u0000"; });
     h = h.replace(/\*\*([^*\n]+)\*\*/g, "<b>$1</b>");

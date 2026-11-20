@@ -48,7 +48,7 @@
       return '<span class="cnt" title="' + esc(m.subject) + '">' + (ok ? "✓ " : "✗ ") + esc(m.kind) + " " + esc(U.ftime(m.sentAt).slice(5)) + (ok ? "" : "（失敗）") + "</span>";
     }).join("<br>");
   }
-  var TAGS = ["姓名", "課程", "日期", "月日", "時間", "地點", "問卷連結"];
+  var TAGS = ["姓名", "課程", "日期", "月日", "時間", "地點", "問卷連結", "活動圖片"];
   var WD = ["日", "一", "二", "三", "四", "五", "六"];
   function cDate(d, short) {
     var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d || "");
@@ -57,8 +57,9 @@
     return short ? md : m[1] + "年" + md;
   }
   function fillMail(text, a, r) {
-    var map = { "姓名": r.name, "課程": a.title, "日期": cDate(a.date), "月日": cDate(a.date, true), "時間": a.time, "地點": a.location, "問卷連結": fbLink(a.id) };
-    return String(text || "").replace(/\{(姓名|課程|日期|月日|時間|地點|問卷連結)\}/g, function (_, k) { return map[k] || ""; });
+    var map = { "姓名": r.name, "課程": a.title, "日期": cDate(a.date), "月日": cDate(a.date, true), "時間": a.time, "地點": a.location, "問卷連結": fbLink(a.id),
+      "活動圖片": a.image ? "![" + String(a.title || "活動圖片").replace(/[\[\]]/g, "") + "](" + a.image + ")" : "" };
+    return String(text || "").replace(/\{(姓名|課程|日期|月日|時間|地點|問卷連結|活動圖片)\}/g, function (_, k) { return map[k] || ""; });
   }
   function tplOptions() {
     return '<option value="">（選擇範本，會取代下面的主旨和內容）</option>' + S.templates.map(function (t) { return '<option value="' + esc(t.id) + '">' + esc(t.name) + "</option>"; }).join("");
@@ -73,9 +74,12 @@
       '<button class="btn danger sm" type="button" data-deltpl hidden>刪除這個範本</button></div></div>' +
       U.fld("m-subject", "主旨", draft.subject, true, "text", ' maxlength="200"') +
       '<label class="f" for="m-body"><span>內容 <i>*</i></span><textarea id="m-body" rows="14" maxlength="10000">' + esc(draft.body) + "</textarea></label>" +
-      '<p class="note" style="margin:-6px 0 0">格式：<code>**粗體**</code>　<code>[顯示文字](網址)</code> 變成連結　網址會自動變連結　單獨一行 <code>-</code> 是分隔線　可以直接貼上表情符號 😊</p>' +
+      '<p class="note" style="margin:-6px 0 0">格式：<code>**粗體**</code>　<code>[顯示文字](網址)</code> 變成連結　<code>![說明](圖片網址)</code> 是圖片　網址會自動變連結　單獨一行 <code>-</code> 是分隔線　可以直接貼上表情符號 😊</p>' +
       '<div class="f"><span>插入代換文字（每個人會換成自己的資料）</span><div class="choices">' +
-      TAGS.map(function (t) { return '<button class="btn ghost sm" type="button" data-tag="' + t + '">{' + t + "}</button>"; }).join("") + "</div></div>" +
+      TAGS.map(function (t) { return '<button class="btn ghost sm" type="button" data-tag="' + t + '">{' + t + "}</button>"; }).join("") + "</div>" +
+      (actById(S.pick) && actById(S.pick).image ? "" : '<p class="note" style="margin:0">這堂課還沒有上傳海報，{活動圖片} 不會顯示任何東西。</p>') + "</div>" +
+      '<div class="f"><span>插入圖片（放在游標的位置）</span><div class="row"><label class="btn ghost sm" for="m-file">從電腦選圖片</label>' +
+      '<input type="file" id="m-file" accept="image/jpeg,image/png,image/webp" hidden><span id="m-imgmsg" class="cnt"></span></div></div>' +
       '<div class="f"><span>預覽（以「' + esc(to[0].name) + '」為例）</span><div class="mailprev"><b id="m-pv-s"></b><div id="m-pv-b" class="mailbody"></div></div></div>' +
       '<p class="note">寄件人：' + esc(S.sender || "新竹社會創新基地") + "（從部署 Apps Script 的 Gmail 帳號寄出）" + (S.quota != null ? "。今天還能寄 " + S.quota + " 封。" : "") + "</p>" +
       '<div class="row"><input type="text" id="m-tplname" maxlength="40" placeholder="範本名稱，例如：課前提醒" aria-label="範本名稱" style="flex:1 1 200px"><button class="btn ghost sm" type="button" data-savetpl>把目前內容存成範本</button></div>' +
@@ -353,6 +357,7 @@
     else if (e.target.id === "pick-all") { var on = e.target.checked; regsFor(S.pick).forEach(function (r) { if (on) delete S.off[r.id]; else S.off[r.id] = true; }); render(); }
     else if (e.target.dataset && e.target.dataset.pickone) { if (e.target.checked) delete S.off[e.target.dataset.pickone]; else S.off[e.target.dataset.pickone] = true; render(); }
     else if (e.target.id === "e-file" && e.target.files[0]) uploadImage(e.target.files[0], e.target);
+    else if (e.target.id === "m-file" && e.target.files[0]) mailImage(e.target.files[0], e.target);
   });
 
   /* 上傳前先縮小到長邊 1600px 的 JPG，載入比較快，也不會超過大小限制 */
@@ -369,6 +374,25 @@
       img.onerror = function () { URL.revokeObjectURL(url); bad(new Error("這個檔案無法當成圖片讀取，請換一張 JPG 或 PNG。")); };
       img.src = url;
     });
+  }
+  function insertAtCursor(ta, text) {
+    var st = ta.selectionStart == null ? ta.value.length : ta.selectionStart, en = ta.selectionEnd == null ? st : ta.selectionEnd;
+    ta.value = ta.value.slice(0, st) + text + ta.value.slice(en);
+    ta.focus(); ta.selectionStart = ta.selectionEnd = st + text.length;
+  }
+  function mailImage(file, input) {
+    var msg = $("m-imgmsg"), ta = $("m-body"), pos = ta.selectionStart;
+    if (!/^image\//.test(file.type)) { U.toast("請選擇圖片檔（JPG、PNG）。"); input.value = ""; return; }
+    if (S.uploading) return;
+    S.uploading = true; msg.textContent = "圖片上傳中…"; $("m-send").disabled = true;
+    shrink(file).then(function (dataUrl) {
+      return call("uploadImage", { type: "image/jpeg", name: "信件圖片", data: dataUrl.split(",")[1] });
+    }).then(function (j) {
+      if (pos != null) { ta.selectionStart = ta.selectionEnd = pos; }
+      insertAtCursor(ta, "\n![圖片](" + j.url + ")\n");
+      msg.textContent = "已插入"; mailPreview();
+    }).catch(function (e) { msg.textContent = ""; if (e.code !== "auth") U.toast(e.message); })
+      .then(function () { S.uploading = false; input.value = ""; var b = $("m-send"); if (b) b.disabled = false; });
   }
   function uploadImage(file, input) {
     var msg = $("e-imgmsg");
