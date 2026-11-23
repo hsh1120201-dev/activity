@@ -110,7 +110,7 @@
         U.fld("r-sid", "您的電話號碼（僅做為聯繫用途）：", S.sid, true, "tel", ' maxlength="20" autocomplete="tel"') +
         U.fld("r-contact", "您的 Gmail（僅做為聯繫用途）：", "", true, "email", ' maxlength="80" autocomplete="email" placeholder="example@gmail.com"') +
         '<fieldset class="mrow" data-row="r-gender"><legend class="f"><span>性別： <i>*</i></span></legend><div class="choices">' + ["男性", "女性", "其他"].map(function (o) { return opt("r-gender", o); }).join("") + "</div></fieldset>" +
-        '<fieldset class="mrow" data-row="r-age"><legend class="f"><span>您的年齡區間： <i>*</i></span></legend><div class="choices free">' + ["18歲以下", "18-25歲", "25-35歲", "35-45歲", "45-55歲", "55歲以上"].map(function (o) { return opt("r-age", o); }).join("") + "</div></fieldset>" +
+        '<fieldset class="mrow" data-row="r-age"><legend class="f"><span>您的年齡區間： <i>*</i></span></legend><div class="choices free">' + ["18歲以下", "19-25歲", "26-35歲", "36-45歲", "46-55歲", "56歲以上"].map(function (o) { return opt("r-age", o); }).join("") + "</div></fieldset>" +
         '<div class="f"><span>你要報名的課程：</span><div class="fixed">' + esc(a.title || "未命名活動") + "</div></div>" +
         '<label class="f" for="r-note"><span>有什麼想對我們說：</span><textarea id="r-note" maxlength="500"></textarea></label>' +
         '<button class="btn" type="submit">送出報名</button>' +
