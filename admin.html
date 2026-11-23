@@ -204,6 +204,95 @@
   function bar(p) { return '<span class="bar"><i style="width:' + Math.round(p * 100) + '%"></i></span>'; }
 
   function ansOf(f, key) { return (f.answers || {})[key]; }
+  function pct(c, n) { return n ? Math.round(c / n * 1000) / 10 + "%" : "0%"; }
+  function round2(x) { return x == null ? "" : Math.round(x * 100) / 100; }
+
+  /* 回饋分析表：每題每個選項的人數、比例、平均分數，匯出 Excel 用 */
+  function fbAnalysisRows(id) {
+    var fs = fbFor(id), act = actById(id), sv = U.surveyOf(act), n = 0;
+    var rows = [["活動", (act && act.title) || ""], ["日期", act ? U.dparts(act.date).full : ""], ["問卷", sv.title],
+      ["回饋份數", fs.length], ["報名人數", regsFor(id).length], ["填答率", regsFor(id).length ? pct(fs.length, regsFor(id).length) : "—"], [],
+      ["題號", "題目", "項目／選項", "人數", "比例", "平均分數"]];
+    sv.items.forEach(function (it) {
+      if (it.type === "note") return;
+      n++;
+      var title = it.title.replace(/[：:]$/, "");
+      if (it.type === "single" || it.type === "multi") {
+        var answered = fs.filter(function (f) { var v = ansOf(f, it.id); return Array.isArray(v) ? v.length : v; }).length;
+        it.options.forEach(function (o) {
+          var c = fs.filter(function (f) { var v = ansOf(f, it.id); return Array.isArray(v) ? v.indexOf(o) >= 0 : v === o; }).length;
+          rows.push([n, title + (it.type === "multi" ? "（複選）" : ""), o, c, pct(c, answered), ""]);
+        });
+      } else if (it.type === "matrix") {
+        it.rows.forEach(function (rw) {
+          var sc = fs.map(function (f) { return U.scoreOf(it.options, ansOf(f, rw.id)); }).filter(Boolean);
+          rows.push([n, title + "－" + rw.label, "平均（滿分 " + it.options.length + "）", sc.length, "", round2(avg(sc))]);
+          it.options.forEach(function (o) {
+            var c = fs.filter(function (f) { return ansOf(f, rw.id) === o; }).length;
+            rows.push([n, title + "－" + rw.label, o, c, pct(c, fs.length), ""]);
+          });
+        });
+      } else if (it.type === "slider") {
+        var vals = fs.map(function (f) { var v = ansOf(f, it.id); return v === "" || v == null ? null : +v; }).filter(function (v) { return v != null && !isNaN(v); });
+        rows.push([n, title, "平均（" + it.min + "～" + it.max + "）", vals.length, "", round2(avg(vals))]);
+        if (vals.length) { rows.push([n, title, "最低", "", "", Math.min.apply(null, vals)]); rows.push([n, title, "最高", "", "", Math.max.apply(null, vals)]); }
+      } else if (it.type === "text") {
+        fs.forEach(function (f) { var v = String(ansOf(f, it.id) || "").trim(); if (v) rows.push([n, title, v, "", "", ""]); });
+      }
+    });
+    return rows;
+  }
+  /* 每個活動的總覽數字 */
+  function fbSummaryOf(a) {
+    var fs = fbFor(a.id), sv = U.surveyOf(a), fields = U.surveyFields(sv), all = [], sl = [];
+    fields.forEach(function (x) {
+      fs.forEach(function (f) {
+        if (x.type === "scale") { var sc = U.scoreOf(x.options, ansOf(f, x.key)); if (sc) all.push(sc / x.options.length * 5); }
+        if (x.type === "slider") { var v = ansOf(f, x.key); if (v !== "" && v != null && !isNaN(+v)) sl.push(+v); }
+      });
+    });
+    var regs = regsFor(a.id).length;
+    return { title: a.title || "未命名活動", date: U.dparts(a.date).full, status: U.STATUS[a.status] || "", regs: regs, fbs: fs.length,
+      rate: regs ? pct(fs.length, regs) : "—", score: all.length ? round2(avg(all)) : "", slider: sl.length ? round2(avg(sl)) : "", survey: sv.title };
+  }
+  function fbOverview() {
+    var acts = U.sortActs(S.acts), list = acts.map(fbSummaryOf), total = S.fbs.length;
+    return '<div class="panel stat"><div><b>' + total + '</b> 份<br><span class="cnt">全部回饋（' + acts.length + " 個活動）</span></div>" +
+      '<div class="row noprint" style="margin-left:auto"><button class="btn sm" type="button" data-fbxlsxall>下載全部回饋（Excel）</button><button class="btn ghost sm" type="button" data-fbprint>列印／存成 PDF</button></div></div>' +
+      '<div class="scroll" style="margin-top:12px"><table class="mtable"><thead><tr><th>活動</th><th>日期</th><th>狀態</th><th class="num">報名</th><th class="num">回饋</th><th class="num">填答率</th><th class="num">評分平均（5 分制）</th><th class="num">意願分數平均</th></tr></thead><tbody>' +
+      list.map(function (x) { return '<tr><td class="wrapc">' + esc(x.title) + "</td><td>" + esc(x.date) + "</td><td>" + esc(x.status) + '</td><td class="num">' + x.regs + '</td><td class="num">' + x.fbs + '</td><td class="num">' + x.rate + '</td><td class="num">' + (x.score === "" ? "—" : x.score) + '</td><td class="num">' + (x.slider === "" ? "—" : x.slider) + "</td></tr>"; }).join("") +
+      '</tbody></table></div><p class="note" style="margin-top:8px">評分平均：把所有評分題換算成 5 分制後平均（最滿意 5 分）。意願分數：拉桿題（例如「再次參加的意願」）的平均。想看單一活動的每題分析，請在上方選擇該活動。</p>';
+  }
+  /* Excel 匯出：需要時才載入 SheetJS */
+  var xlsxReady;
+  function withXLSX() {
+    if (window.XLSX) return Promise.resolve(window.XLSX);
+    if (!xlsxReady) xlsxReady = new Promise(function (ok, no) {
+      var sc = document.createElement("script");
+      sc.src = "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
+      sc.onload = function () { ok(window.XLSX); };
+      sc.onerror = function () { xlsxReady = null; no(new Error("Excel 元件載入失敗，請檢查網路後再試，或改用 CSV。")); };
+      document.head.appendChild(sc);
+    });
+    return xlsxReady;
+  }
+  function sheetName(t, used) {
+    var b = String(t || "活動").replace(/[\\\/\?\*\[\]:]/g, "").slice(0, 28) || "活動", n = b, i = 2;
+    while (used[n]) n = b.slice(0, 25) + "(" + i++ + ")";
+    used[n] = 1; return n;
+  }
+  function saveXLSX(sheets, name) {
+    return withXLSX().then(function (X) {
+      var wb = X.utils.book_new(), used = {};
+      sheets.forEach(function (sh) {
+        var ws = X.utils.aoa_to_sheet(sh.rows);
+        ws["!cols"] = (sh.cols || []).map(function (w) { return { wch: w }; });
+        X.utils.book_append_sheet(wb, ws, sheetName(sh.name, used));
+      });
+      var data = X.write(wb, { bookType: "xlsx", type: "array" });
+      saveBlob(new Blob([data], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), name + ".xlsx");
+    }).catch(function (e) { U.toast(e.message); });
+  }
   function fbReport(id) {
     var fs = fbFor(id), act = actById(id), sv = U.surveyOf(act), fields = U.surveyFields(sv);
     var h = '<div class="panel sv-block" style="margin-bottom:14px"><h4>回饋問卷：' + esc(sv.title) + "</h4>" +
@@ -218,7 +307,7 @@
     var nsKeys = Object.keys(ns);
     h += '<div class="panel stat"><div><b>' + fs.length + '</b> 份<br><span class="cnt">回饋（報名 ' + regsFor(id).length + " 人）</span></div>" +
       (scales.length && nsKeys.length === 1 ? "<div><b>" + (all.length ? avg(all).toFixed(2) : "—") + "</b> / " + nsKeys[0] + '<br><span class="cnt">評分題平均</span></div>' : "") +
-      '<div style="margin-left:auto"><button class="btn ghost sm" type="button" data-fbcsv>下載回饋 CSV</button></div></div>';
+      '<div class="row noprint" style="margin-left:auto"><button class="btn sm" type="button" data-fbxlsx>下載分析報表（Excel）</button><button class="btn ghost sm" type="button" data-fbcsv>下載原始回答 CSV</button><button class="btn ghost sm" type="button" data-fbprint>列印／存成 PDF</button></div></div>';
 
     var n = 0;
     sv.items.forEach(function (it) {
@@ -229,14 +318,14 @@
         var answered = fs.filter(function (f) { var v = ansOf(f, it.id); return Array.isArray(v) ? v.length : v; }).length || 1;
         h += '<div class="bars">' + it.options.map(function (o) {
           var c = fs.filter(function (f) { var v = ansOf(f, it.id); return Array.isArray(v) ? v.indexOf(o) >= 0 : v === o; }).length;
-          return "<span>" + esc(o) + "</span>" + bar(c / answered) + "<span>" + c + "</span>";
+          return "<span>" + esc(o) + "</span>" + bar(c / answered) + "<span>" + c + "（" + pct(c, answered) + "）</span>";
         }).join("") + "</div>" + (it.type === "multi" ? '<p class="note">複選題，長條是選這項的人占作答人數的比例。</p>' : "");
       } else if (it.type === "matrix") {
         h += '<div class="scroll"><table class="mtable"><thead><tr><th>項目</th><th class="num">平均</th>' + it.options.map(function (o) { return '<th class="num">' + esc(o) + "</th>"; }).join("") + "</tr></thead><tbody>" +
           it.rows.map(function (r) {
             var sc = fs.map(function (f) { return U.scoreOf(it.options, ansOf(f, r.id)); }).filter(Boolean);
             return "<tr><td>" + esc(r.label) + '</td><td class="num"><strong>' + (sc.length ? avg(sc).toFixed(2) : "—") + "</strong></td>" +
-              it.options.map(function (o) { return '<td class="num">' + fs.filter(function (f) { return ansOf(f, r.id) === o; }).length + "</td>"; }).join("") + "</tr>";
+              it.options.map(function (o) { var c = fs.filter(function (f) { return ansOf(f, r.id) === o; }).length; return '<td class="num">' + c + '<br><span class="cnt">' + pct(c, fs.length) + "</span></td>"; }).join("") + "</tr>";
           }).join("") + '</tbody></table></div><p class="note">平均分數：「' + esc(it.options[0]) + "」" + it.options.length + " 分，「" + esc(it.options[it.options.length - 1]) + "」1 分。</p>";
       } else if (it.type === "slider") {
         var vals = fs.map(function (f) { var v = ansOf(f, it.id); return v === "" || v == null ? null : +v; }).filter(function (v) { return v != null && !isNaN(v); });
@@ -277,10 +366,11 @@
       .then(function () { S.busy = false; });
   }
 
-  function picker() {
+  function picker(allowAll) {
     var acts = U.sortActs(S.acts);
-    if (!actById(S.pick)) S.pick = acts.length ? acts[0].id : "";
+    if (!actById(S.pick) && !(allowAll && S.pick === "__all")) S.pick = acts.length ? acts[0].id : "";
     return '<label class="f" for="a-pick" style="margin-bottom:12px"><span>活動</span><select id="a-pick">' +
+      (allowAll ? '<option value="__all"' + (S.pick === "__all" ? " selected" : "") + ">全部活動總覽</option>" : "") +
       acts.map(function (a) { return '<option value="' + esc(a.id) + '"' + (a.id === S.pick ? " selected" : "") + ">" + esc(U.dparts(a.date).md + "　" + (a.title || "未命名活動")) + "</option>"; }).join("") + "</select></label>";
   }
 
@@ -323,8 +413,8 @@
         (S.quota != null ? "今天還能寄 " + S.quota + " 封信。" : "勾選報名者後，可以按「寄信給勾選的人」。") + "</p>"
         : '<div class="panel"><p class="note">這個活動還沒有人報名。</p></div>';
     } else {
-      h += picker();
-      h += fbReport(S.pick);
+      h += picker(true);
+      h += S.pick === "__all" ? fbOverview() : fbReport(S.pick);
     }
     el.innerHTML = h;
   }
@@ -361,9 +451,11 @@
   }
   function download(rows, name) {
     var csv = "\uFEFF" + rows.map(function (r) { return r.map(csvCell).join(","); }).join("\r\n");
-    var url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
-    var link = document.createElement("a");
-    link.href = url; link.download = name.replace(/[\\/:*?"<>|]/g, "") + ".csv";
+    saveBlob(new Blob([csv], { type: "text/csv;charset=utf-8" }), name + ".csv");
+  }
+  function saveBlob(blob, filename) {
+    var url = URL.createObjectURL(blob), link = document.createElement("a");
+    link.href = url; link.download = filename.replace(/[\\/:*?"<>|]/g, "");
     document.body.appendChild(link); link.click(); link.remove();
     setTimeout(function () { URL.revokeObjectURL(url); }, 2000);
   }
@@ -394,7 +486,7 @@
     }
   });
   document.addEventListener("click", function (e) {
-    var t = e.target.closest("[data-close],[data-tab],[data-logout],[data-new],[data-edit],[data-del],[data-rm],[data-csv],[data-copy],[data-fbcsv],[data-copylink],[data-actlink],[data-noimg],[data-mail],[data-tag],[data-savetpl],[data-deltpl],[data-survey],[data-qadd],[data-qmove],[data-qdel],[data-svsave],[data-svreset],[data-svapply],[data-svtpl],[data-svdeltpl]");
+    var t = e.target.closest("[data-close],[data-tab],[data-logout],[data-new],[data-edit],[data-del],[data-rm],[data-csv],[data-copy],[data-fbcsv],[data-fbxlsx],[data-fbxlsxall],[data-fbprint],[data-copylink],[data-actlink],[data-noimg],[data-mail],[data-tag],[data-savetpl],[data-deltpl],[data-survey],[data-qadd],[data-qmove],[data-qdel],[data-svsave],[data-svreset],[data-svapply],[data-svtpl],[data-svdeltpl]");
     if (!t) { if (e.target === $("dlg")) U.closeDlg(); return; }
     var d = t.dataset;
     if (d.close !== undefined) U.closeDlg();
@@ -414,6 +506,17 @@
     } else if (d.fbcsv !== undefined) {
       var a2 = actById(S.pick);
       download(fbRowsOf(S.pick), "課程滿意度-" + ((a2 && a2.title) || "活動"));
+    } else if (d.fbxlsx !== undefined) {
+      var a3 = actById(S.pick), t3 = (a3 && a3.title) || "活動";
+      saveXLSX([{ name: "分析", rows: fbAnalysisRows(S.pick), cols: [6, 36, 28, 8, 8, 10] }, { name: "原始回答", rows: fbRowsOf(S.pick), cols: [18] }], "回饋分析-" + t3);
+    } else if (d.fbxlsxall !== undefined) {
+      var acts = U.sortActs(S.acts), sum = [["活動", "日期", "狀態", "問卷", "報名人數", "回饋份數", "填答率", "評分平均（5 分制）", "意願分數平均"]];
+      acts.forEach(function (a) { var x = fbSummaryOf(a); sum.push([x.title, x.date, x.status, x.survey, x.regs, x.fbs, x.rate, x.score, x.slider]); });
+      var sheets = [{ name: "總覽", rows: sum, cols: [36, 16, 8, 18, 8, 8, 8, 14, 12] }];
+      acts.forEach(function (a) { if (fbFor(a.id).length) sheets.push({ name: U.dparts(a.date).md.replace("/", "-") + " " + (a.title || ""), rows: fbAnalysisRows(a.id).concat([[], ["原始回答"]], fbRowsOf(a.id)), cols: [10, 36, 28, 8, 8, 10] }); });
+      saveXLSX(sheets, "全部活動回饋-" + new Date().toISOString().slice(0, 10));
+    } else if (d.fbprint !== undefined) {
+      window.print();
     } else if (d.survey !== undefined) {
       openSurvey(d.survey);
     } else if (d.qadd !== undefined) {
