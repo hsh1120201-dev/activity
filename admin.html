@@ -204,6 +204,37 @@
   function bar(p) { return '<span class="bar"><i style="width:' + Math.round(p * 100) + '%"></i></span>'; }
 
   function ansOf(f, key) { return (f.answers || {})[key]; }
+  function median(list) {
+    if (!list.length) return null;
+    var a = list.slice().sort(function (x, y) { return x - y; }), m = Math.floor(a.length / 2);
+    return a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2;
+  }
+  /* 「滿意」＝ 評分題前兩個選項（例如 非常滿意、滿意）；選項少於 4 個時只算第一個 */
+  function topN(options) { return options.length >= 4 ? 2 : 1; }
+  function isSat(options, v) { var i = options.indexOf(v); return i >= 0 && i < topN(options); }
+  /* 成果報告用的整體指標：整體滿意度、各構面平均、整體平均、拉桿題平均與中位數 */
+  function fbKpi(fs, sv) {
+    var tot = 0, sat = 0, allSc = [], groups = [], sliders = [];
+    sv.items.forEach(function (it) {
+      if (it.type === "matrix") {
+        var g = [];
+        it.rows.forEach(function (rw) {
+          fs.forEach(function (f) {
+            var v = ansOf(f, rw.id), sc = U.scoreOf(it.options, v);
+            if (!sc) return;
+            tot++; if (isSat(it.options, v)) sat++;
+            var s5 = sc / it.options.length * 5; g.push(s5); allSc.push(s5);
+          });
+        });
+        groups.push({ title: it.title.replace(/[：:]$/, ""), avg: avg(g), n: it.rows.length });
+      } else if (it.type === "slider") {
+        var vals = fs.map(function (f) { var v = ansOf(f, it.id); return v === "" || v == null ? null : +v; }).filter(function (v) { return v != null && !isNaN(v); });
+        sliders.push({ title: it.title.replace(/[：:]$/, ""), min: it.min, max: it.max, avg: avg(vals), median: median(vals), n: vals.length });
+      }
+    });
+    return { satPct: tot ? sat / tot : null, overall: avg(allSc), groups: groups, sliders: sliders,
+      items: groups.reduce(function (a, g) { return a + g.n; }, 0) };
+  }
   function pct(c, n) { return n ? Math.round(c / n * 1000) / 10 + "%" : "0%"; }
   function round2(x) { return x == null ? "" : Math.round(x * 100) / 100; }
 
@@ -211,8 +242,16 @@
   function fbAnalysisRows(id) {
     var fs = fbFor(id), act = actById(id), sv = U.surveyOf(act), n = 0;
     var rows = [["活動", (act && act.title) || ""], ["日期", act ? U.dparts(act.date).full : ""], ["問卷", sv.title],
-      ["回饋份數", fs.length], ["報名人數", regsFor(id).length], ["填答率", regsFor(id).length ? pct(fs.length, regsFor(id).length) : "—"], [],
-      ["題號", "題目", "項目／選項", "人數", "比例", "平均分數"]];
+      ["有效問卷", fs.length], ["報名人數", regsFor(id).length], ["填答率", regsFor(id).length ? pct(fs.length, regsFor(id).length) : "—"]];
+    var K = fbKpi(fs, sv);
+    if (K.groups.length) {
+      rows.push(["整體滿意度（非常滿意＋滿意）", K.satPct == null ? "" : Math.round(K.satPct * 1000) / 10 + "%"]);
+      K.groups.forEach(function (g) { rows.push([g.title + " 平均（滿分 5）", round2(g.avg)]); });
+      rows.push(["整體平均（滿分 5，" + K.items + " 項細項）", round2(K.overall)]);
+    }
+    K.sliders.forEach(function (x) { rows.push([x.title + " 平均（滿分 " + x.max + "）", round2(x.avg)], [x.title + " 中位數", round2(x.median)]); });
+    rows = rows.concat([[],
+      ["題號", "題目", "項目／選項", "人數", "比例", "平均分數"]]);
     sv.items.forEach(function (it) {
       if (it.type === "note") return;
       n++;
@@ -226,7 +265,8 @@
       } else if (it.type === "matrix") {
         it.rows.forEach(function (rw) {
           var sc = fs.map(function (f) { return U.scoreOf(it.options, ansOf(f, rw.id)); }).filter(Boolean);
-          rows.push([n, title + "－" + rw.label, "平均（滿分 " + it.options.length + "）", sc.length, "", round2(avg(sc))]);
+          var st = fs.filter(function (f) { return isSat(it.options, ansOf(f, rw.id)); }).length;
+          rows.push([n, title + "－" + rw.label, "平均（滿分 " + it.options.length + "）／滿意比例", sc.length, pct(st, sc.length), round2(avg(sc))]);
           it.options.forEach(function (o) {
             var c = fs.filter(function (f) { return ansOf(f, rw.id) === o; }).length;
             rows.push([n, title + "－" + rw.label, o, c, pct(c, fs.length), ""]);
@@ -235,6 +275,7 @@
       } else if (it.type === "slider") {
         var vals = fs.map(function (f) { var v = ansOf(f, it.id); return v === "" || v == null ? null : +v; }).filter(function (v) { return v != null && !isNaN(v); });
         rows.push([n, title, "平均（" + it.min + "～" + it.max + "）", vals.length, "", round2(avg(vals))]);
+        rows.push([n, title, "中位數", "", "", round2(median(vals))]);
         if (vals.length) { rows.push([n, title, "最低", "", "", Math.min.apply(null, vals)]); rows.push([n, title, "最高", "", "", Math.max.apply(null, vals)]); }
       } else if (it.type === "text") {
         fs.forEach(function (f) { var v = String(ansOf(f, it.id) || "").trim(); if (v) rows.push([n, title, v, "", "", ""]); });
@@ -253,14 +294,15 @@
     });
     var regs = regsFor(a.id).length;
     return { title: a.title || "未命名活動", date: U.dparts(a.date).full, status: U.STATUS[a.status] || "", regs: regs, fbs: fs.length,
-      rate: regs ? pct(fs.length, regs) : "—", score: all.length ? round2(avg(all)) : "", slider: sl.length ? round2(avg(sl)) : "", survey: sv.title };
+      rate: regs ? pct(fs.length, regs) : "—", score: all.length ? round2(avg(all)) : "", slider: sl.length ? round2(avg(sl)) : "", survey: sv.title,
+      sat: (function () { var k = fbKpi(fs, sv); return k.satPct == null ? "" : Math.round(k.satPct * 1000) / 10 + "%"; })(), sliderMed: sl.length ? round2(median(sl)) : "" };
   }
   function fbOverview() {
     var acts = U.sortActs(S.acts), list = acts.map(fbSummaryOf), total = S.fbs.length;
     return '<div class="panel stat"><div><b>' + total + '</b> 份<br><span class="cnt">全部回饋（' + acts.length + " 個活動）</span></div>" +
       '<div class="row noprint" style="margin-left:auto"><button class="btn sm" type="button" data-fbxlsxall>下載全部回饋（Excel）</button><button class="btn ghost sm" type="button" data-fbprint>列印／存成 PDF</button></div></div>' +
-      '<div class="scroll" style="margin-top:12px"><table class="mtable"><thead><tr><th>活動</th><th>日期</th><th>狀態</th><th class="num">報名</th><th class="num">回饋</th><th class="num">填答率</th><th class="num">評分平均（5 分制）</th><th class="num">意願分數平均</th></tr></thead><tbody>' +
-      list.map(function (x) { return '<tr><td class="wrapc">' + esc(x.title) + "</td><td>" + esc(x.date) + "</td><td>" + esc(x.status) + '</td><td class="num">' + x.regs + '</td><td class="num">' + x.fbs + '</td><td class="num">' + x.rate + '</td><td class="num">' + (x.score === "" ? "—" : x.score) + '</td><td class="num">' + (x.slider === "" ? "—" : x.slider) + "</td></tr>"; }).join("") +
+      '<div class="scroll" style="margin-top:12px"><table class="mtable"><thead><tr><th>活動</th><th>日期</th><th>狀態</th><th class="num">報名</th><th class="num">回饋</th><th class="num">填答率</th><th class="num">整體滿意度</th><th class="num">評分平均（5 分制）</th><th class="num">意願分數平均</th></tr></thead><tbody>' +
+      list.map(function (x) { return '<tr><td class="wrapc">' + esc(x.title) + "</td><td>" + esc(x.date) + "</td><td>" + esc(x.status) + '</td><td class="num">' + x.regs + '</td><td class="num">' + x.fbs + '</td><td class="num">' + x.rate + '</td><td class="num">' + (x.sat || "—") + '</td><td class="num">' + (x.score === "" ? "—" : x.score) + '</td><td class="num">' + (x.slider === "" ? "—" : x.slider) + "</td></tr>"; }).join("") +
       '</tbody></table></div><p class="note" style="margin-top:8px">評分平均：把所有評分題換算成 5 分制後平均（最滿意 5 分）。意願分數：拉桿題（例如「再次參加的意願」）的平均。想看單一活動的每題分析，請在上方選擇該活動。</p>';
   }
   /* Excel 匯出：需要時才載入 SheetJS */
@@ -305,9 +347,20 @@
     var scales = fields.filter(function (x) { return x.type === "scale"; }), all = [], ns = {};
     scales.forEach(function (x) { ns[x.options.length] = 1; fs.forEach(function (f) { var sc = U.scoreOf(x.options, ansOf(f, x.key)); if (sc) all.push(sc); }); });
     var nsKeys = Object.keys(ns);
-    h += '<div class="panel stat"><div><b>' + fs.length + '</b> 份<br><span class="cnt">回饋（報名 ' + regsFor(id).length + " 人）</span></div>" +
-      (scales.length && nsKeys.length === 1 ? "<div><b>" + (all.length ? avg(all).toFixed(2) : "—") + "</b> / " + nsKeys[0] + '<br><span class="cnt">評分題平均</span></div>' : "") +
+    var K = fbKpi(fs, sv);
+    h += '<div class="panel stat"><div><b>' + fs.length + '</b> 份<br><span class="cnt">有效問卷（報名 ' + regsFor(id).length + " 人）</span></div>" +
+      (K.satPct != null ? "<div><b>" + Math.round(K.satPct * 1000) / 10 + '%</b><br><span class="cnt">整體滿意度</span></div>' : "") +
+      (K.overall != null ? "<div><b>" + K.overall.toFixed(2) + '</b> / 5<br><span class="cnt">整體平均</span></div>' :
+        (scales.length && nsKeys.length === 1 ? "<div><b>" + (all.length ? avg(all).toFixed(2) : "—") + "</b> / " + nsKeys[0] + '<br><span class="cnt">評分題平均</span></div>' : "")) +
+      K.sliders.filter(function (x) { return x.n; }).map(function (x) { return "<div><b>" + round2(x.avg) + "</b> / " + x.max + '<br><span class="cnt">' + esc(x.title) + " 平均（中位數 " + round2(x.median) + "）</span></div>"; }).join("") +
       '<div class="row noprint" style="margin-left:auto"><button class="btn sm" type="button" data-fbxlsx>下載分析報表（Excel）</button><button class="btn ghost sm" type="button" data-fbcsv>下載原始回答 CSV</button><button class="btn ghost sm" type="button" data-fbprint>列印／存成 PDF</button></div></div>';
+    if (K.groups.length) h += '<div class="panel sv-block" style="margin-top:12px"><h4>滿意度統計摘要</h4>' +
+      '<div class="scroll"><table class="mtable"><thead><tr><th>構面</th><th class="num">細項數</th><th class="num">平均分數（滿分 5）</th></tr></thead><tbody>' +
+      K.groups.map(function (g) { return "<tr><td>" + esc(g.title) + '</td><td class="num">' + g.n + '</td><td class="num"><strong>' + (g.avg == null ? "—" : g.avg.toFixed(2)) + "</strong></td></tr>"; }).join("") +
+      '<tr><td><strong>整體平均</strong></td><td class="num">' + K.items + '</td><td class="num"><strong>' + (K.overall == null ? "—" : K.overall.toFixed(2)) + "</strong></td></tr></tbody></table></div>" +
+      '<p class="note">本次回收有效問卷 ' + fs.length + " 份，" + K.groups.length + " 大構面、" + K.items + " 項細項指標；整體滿意度（勾選「" + "非常滿意」或「滿意」的比例）" +
+      (K.satPct == null ? "—" : Math.round(K.satPct * 1000) / 10 + "%") + "，整體平均 " + (K.overall == null ? "—" : K.overall.toFixed(2)) + " 分" +
+      K.sliders.filter(function (x) { return x.n; }).map(function (x) { return "；" + esc(x.title) + "平均 " + round2(x.avg) + " 分（滿分 " + x.max + "），中位數 " + round2(x.median) + " 分"; }).join("") + "。</p></div>";
 
     var n = 0;
     sv.items.forEach(function (it) {
@@ -321,15 +374,16 @@
           return "<span>" + esc(o) + "</span>" + bar(c / answered) + "<span>" + c + "（" + pct(c, answered) + "）</span>";
         }).join("") + "</div>" + (it.type === "multi" ? '<p class="note">複選題，長條是選這項的人占作答人數的比例。</p>' : "");
       } else if (it.type === "matrix") {
-        h += '<div class="scroll"><table class="mtable"><thead><tr><th>項目</th><th class="num">平均</th>' + it.options.map(function (o) { return '<th class="num">' + esc(o) + "</th>"; }).join("") + "</tr></thead><tbody>" +
+        h += '<div class="scroll"><table class="mtable"><thead><tr><th>項目</th><th class="num">平均</th><th class="num">滿意比例</th>' + it.options.map(function (o) { return '<th class="num">' + esc(o) + "</th>"; }).join("") + "</tr></thead><tbody>" +
           it.rows.map(function (r) {
             var sc = fs.map(function (f) { return U.scoreOf(it.options, ansOf(f, r.id)); }).filter(Boolean);
-            return "<tr><td>" + esc(r.label) + '</td><td class="num"><strong>' + (sc.length ? avg(sc).toFixed(2) : "—") + "</strong></td>" +
+            var st = fs.filter(function (f) { return isSat(it.options, ansOf(f, r.id)); }).length;
+            return "<tr><td>" + esc(r.label) + '</td><td class="num"><strong>' + (sc.length ? avg(sc).toFixed(2) : "—") + '</strong></td><td class="num">' + pct(st, sc.length) + "</td>" +
               it.options.map(function (o) { var c = fs.filter(function (f) { return ansOf(f, r.id) === o; }).length; return '<td class="num">' + c + '<br><span class="cnt">' + pct(c, fs.length) + "</span></td>"; }).join("") + "</tr>";
           }).join("") + '</tbody></table></div><p class="note">平均分數：「' + esc(it.options[0]) + "」" + it.options.length + " 分，「" + esc(it.options[it.options.length - 1]) + "」1 分。</p>";
       } else if (it.type === "slider") {
         var vals = fs.map(function (f) { var v = ansOf(f, it.id); return v === "" || v == null ? null : +v; }).filter(function (v) { return v != null && !isNaN(v); });
-        h += vals.length ? '<p style="margin:0">平均 <strong>' + Math.round(avg(vals) * 10) / 10 + "</strong>（" + it.min + "～" + it.max + "），最低 " + Math.min.apply(null, vals) + "，最高 " + Math.max.apply(null, vals) + "</p>" : '<p class="note">沒有資料</p>';
+        h += vals.length ? '<p style="margin:0">平均 <strong>' + Math.round(avg(vals) * 10) / 10 + "</strong>（" + it.min + "～" + it.max + "），中位數 " + round2(median(vals)) + "，最低 " + Math.min.apply(null, vals) + "，最高 " + Math.max.apply(null, vals) + "</p>" : '<p class="note">沒有資料</p>';
       } else if (it.type === "text") {
         var ts = fs.filter(function (f) { return String(ansOf(f, it.id) || "").trim(); });
         h += ts.length ? '<div class="list">' + ts.map(function (f) { return '<div class="fbitem"><span class="cnt">' + esc(U.ftime(f.createdAt)) + "</span><p>" + esc(ansOf(f, it.id)) + "</p></div>"; }).join("") + "</div>" : '<p class="note">沒有人填寫</p>';
@@ -510,8 +564,22 @@
       var a3 = actById(S.pick), t3 = (a3 && a3.title) || "活動";
       saveXLSX([{ name: "分析", rows: fbAnalysisRows(S.pick), cols: [6, 36, 28, 8, 8, 10] }, { name: "原始回答", rows: fbRowsOf(S.pick), cols: [18] }], "回饋分析-" + t3);
     } else if (d.fbxlsxall !== undefined) {
-      var acts = U.sortActs(S.acts), sum = [["活動", "日期", "狀態", "問卷", "報名人數", "回饋份數", "填答率", "評分平均（5 分制）", "意願分數平均"]];
-      acts.forEach(function (a) { var x = fbSummaryOf(a); sum.push([x.title, x.date, x.status, x.survey, x.regs, x.fbs, x.rate, x.score, x.slider]); });
+      var acts = U.sortActs(S.acts), sum = [["活動", "日期", "狀態", "問卷", "報名人數", "有效問卷", "填答率", "整體滿意度", "評分平均（5 分制）", "意願分數平均", "意願分數中位數"]];
+      acts.forEach(function (a) { var x = fbSummaryOf(a); sum.push([x.title, x.date, x.status, x.survey, x.regs, x.fbs, x.rate, x.sat, x.score, x.slider, x.sliderMed]); });
+      /* 全部活動合計（成果報告用） */
+      var allFs = [], allSc = [], allSl = [], tot = 0, sat = 0;
+      acts.forEach(function (a) {
+        var sv = U.surveyOf(a);
+        fbFor(a.id).forEach(function (f) {
+          allFs.push(f);
+          U.surveyFields(sv).forEach(function (x) {
+            var v = ansOf(f, x.key);
+            if (x.type === "scale") { var sc = U.scoreOf(x.options, v); if (sc) { tot++; if (isSat(x.options, v)) sat++; allSc.push(sc / x.options.length * 5); } }
+            if (x.type === "slider" && v !== "" && v != null && !isNaN(+v)) allSl.push(+v);
+          });
+        });
+      });
+      sum.push([], ["全部合計", "", "", "", S.regs.length, allFs.length, "", tot ? Math.round(sat / tot * 1000) / 10 + "%" : "", round2(avg(allSc)), round2(avg(allSl)), round2(median(allSl))]);
       var sheets = [{ name: "總覽", rows: sum, cols: [36, 16, 8, 18, 8, 8, 8, 14, 12] }];
       acts.forEach(function (a) { if (fbFor(a.id).length) sheets.push({ name: U.dparts(a.date).md.replace("/", "-") + " " + (a.title || ""), rows: fbAnalysisRows(a.id).concat([[], ["原始回答"]], fbRowsOf(a.id)), cols: [10, 36, 28, 8, 8, 10] }); });
       saveXLSX(sheets, "全部活動回饋-" + new Date().toISOString().slice(0, 10));
