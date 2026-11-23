@@ -17,12 +17,12 @@
 
   <main>
     <div class="hero">
-      <h1>新竹社會創新基地<br><em>活動報名</em>平台</h1>
+      <h1 class="hero-title"><span>新竹社會創新基地</span><span><em>活動報名</em>平台</span></h1>
       <p>講座、工作坊與交流活動，都在這裡報名與填寫回饋。</p>
     </div>
 
     <section aria-labelledby="h-list">
-      <div class="sec-head"><h2 id="h-list">近期活動</h2><small>點選活動即可查看與報名</small></div>
+      <div class="sec-head"><h2 id="h-list">近期活動</h2><small>按「我要報名」或「填寫回饋」即可開始</small></div>
       <div class="filters">
         <label for="f-sem">類別<select id="f-sem"><option value="">全部類別</option></select></label>
         <label for="f-status">狀態<select id="f-status">
@@ -53,14 +53,28 @@
     var d = U.dparts(a.date);
     var meta = [a.semester, a.time, a.location].filter(Boolean).map(esc).join(" · ");
     var chip = a.status === "open" && isFull(a) ? "額滿" : "";
-    return '<button class="act" type="button" data-act="' + esc(a.id) + '">' +
+    return '<div class="act act-card">' +
       '<span class="date"><b>' + esc(d.md) + "</b><i>" + esc(d.wd) + "</i></span>" +
       '<span class="body"><span class="t">' + esc(a.title || "未命名活動") + "</span>" +
       (meta ? '<span class="m">' + meta + "</span>" : "") +
       '<span class="tags"><span class="pill ' + esc(a.status) + '">' + esc(U.STATUS[a.status] || "") + "</span>" +
+      actBtns(a) +
       (chip ? '<span class="chip">' + chip + "</span>" : "") +
       '<span class="cnt">' + esc(U.capText(a, S.counts)) + "</span></span></span>" +
-      (a.image ? '<span class="thumb"><img src="' + esc(a.image) + '" alt="" loading="lazy" onerror="this.parentNode.remove()"></span>' : "") + "</button>";
+      (a.image ? '<span class="thumb"><img src="' + esc(a.image) + '" alt="" loading="lazy" onerror="this.parentNode.remove()"></span>' : "") + "</div>";
+  }
+
+  /* 報名、回饋兩顆獨立按鈕：一直顯示，沒開放的那顆反灰不能按 */
+  function actBtns(a, view) {
+    var regOn = a.status === "open", fbOn = a.status === "feedback";
+    function b(kind, on, label, offLabel) {
+      return '<button class="btn sm' + (view && view !== kind ? " ghost" : "") + '" type="button" data-view="' + kind + '" data-id="' + esc(a.id) + '"' +
+        (on ? "" : " disabled") + (view ? ' aria-pressed="' + (view === kind) + '"' : "") + ">" + (on ? label : offLabel) + "</button>";
+    }
+    var tag = view === undefined ? "span" : "div";
+    return "<" + tag + ' class="act-btns' + (view === undefined ? " inline" : "") + '" role="group" aria-label="報名或填寫回饋">' +
+      b("reg", regOn, "我要報名", a.status === "closed" || fbOn ? "報名已截止" : "尚未開放報名") +
+      b("fb", fbOn, "填寫回饋", a.status === "closed" ? "回饋已關閉" : "回饋尚未開放") + "</" + tag + ">";
   }
 
   function render() {
@@ -88,8 +102,10 @@
   }
   function remember(sid) { S.sid = sid; try { localStorage.setItem("must-sid", sid); } catch (e) {} }
 
-  function openAct(id, again) {
+  /* 報名與回饋是兩個獨立按鈕：view 為 "reg"（報名）或 "fb"（回饋），沒指定時依活動狀態決定先顯示哪一個；again 為 true 時，填過的裝置也直接顯示問卷 */
+  function openAct(id, view, again) {
     var a = actById(id); if (!a) { U.closeDlg(); return; }
+    if (view !== "reg" && view !== "fb") view = a.status === "feedback" ? "fb" : a.status === "open" ? "reg" : "";
     var d = U.dparts(a.date);
     var h = U.head(a.title || "未命名活動") +
       (a.image ? '<a class="poster" href="' + esc(a.image) + '" target="_blank" rel="noopener"><img src="' + esc(a.image) + '" alt="' + esc(a.title || "活動圖片") + '" onerror="this.parentNode.remove()"></a>' : "") +
@@ -98,32 +114,42 @@
       (a.time ? "<dt>時間</dt><dd>" + esc(a.time) + "</dd>" : "") +
       (a.location ? "<dt>地點</dt><dd>" + esc(a.location) + "</dd>" : "") +
       (a.semester ? "<dt>類別</dt><dd>" + esc(a.semester) + "</dd>" : "") + "</dl>" +
-      (a.description ? '<p class="desc">' + esc(a.description) + "</p>" : "") + "<hr>";
+      (a.description ? '<p class="desc">' + esc(a.description) + "</p>" : "") +
+      actBtns(a, view) + "<hr>";
 
+    if (view === "reg") h += regSection(a);
+    else if (view === "fb") h += fbSection(a, again);
+    else h += '<p class="note">這個活動已結束。</p>';
+    U.showDlg(h);
+  }
+
+  function regSection(a) {
+    var id = a.id;
     var cancelBox = '<details><summary>已經報名，想取消？</summary><form id="cancel-form" data-id="' + esc(id) + '" style="margin-top:12px">' +
       '<div class="grid2">' + U.fld("c-sid", "報名時填寫的電話號碼", S.sid, true, "tel", ' maxlength="20" autocomplete="tel"') + U.fld("c-name", "報名時填寫的姓名", "", true, "text", ' maxlength="40"') + "</div>" +
       '<button class="btn danger" type="submit">取消報名</button></form></details>';
-    if (a.status === "open") {
-      if (isFull(a)) h += '<div class="warn">這個活動已額滿。有人取消時，名額會重新開放。</div>';
-      else h += '<form id="reg-form" class="survey" data-id="' + esc(id) + '" novalidate>' +
-        U.fld("r-name", "您的姓名：", "", true, "text", ' maxlength="40" autocomplete="name"') +
-        U.fld("r-sid", "您的電話號碼（僅做為聯繫用途）：", S.sid, true, "tel", ' maxlength="20" autocomplete="tel"') +
-        U.fld("r-contact", "您的 Gmail（僅做為聯繫用途）：", "", true, "email", ' maxlength="80" autocomplete="email" placeholder="example@gmail.com"') +
-        '<fieldset class="mrow" data-row="r-gender"><legend class="f"><span>性別： <i>*</i></span></legend><div class="choices">' + ["男性", "女性", "其他"].map(function (o) { return opt("r-gender", o); }).join("") + "</div></fieldset>" +
-        '<fieldset class="mrow" data-row="r-age"><legend class="f"><span>您的年齡區間： <i>*</i></span></legend><div class="choices free">' + ["18歲以下", "19-25歲", "26-35歲", "36-45歲", "46-55歲", "56歲以上"].map(function (o) { return opt("r-age", o); }).join("") + "</div></fieldset>" +
-        '<div class="f"><span>你要報名的課程：</span><div class="fixed">' + esc(a.title || "未命名活動") + "</div></div>" +
-        '<label class="f" for="r-note"><span>有什麼想對我們說：</span><textarea id="r-note" maxlength="500"></textarea></label>' +
-        '<button class="btn" type="submit">送出報名</button>' +
-        '<p class="note">電話與 Gmail 僅做為聯繫用途。</p></form>';
-      h += "<hr>" + cancelBox;
-    } else if (a.status === "feedback") {
-      /* 這台裝置填過時先顯示感謝，但仍可再填一份（現場共用平板、或換人填寫時用） */
-      h += fbDone(id) && !again ? '<div class="ok">這台裝置已經填過這個活動的回饋問卷，謝謝您！</div>' +
-        '<button class="btn ghost" type="button" data-again="' + esc(id) + '">再填一份問卷</button>' : surveyForm(id);
-    } else {
-      h += '<p class="note">這個活動已結束。</p>';
-    }
-    U.showDlg(h);
+    if (a.status !== "open") return '<p class="note">這個活動目前沒有開放報名。</p>';
+    var h = "";
+    if (isFull(a)) h += '<div class="warn">這個活動已額滿。有人取消時，名額會重新開放。</div>';
+    else h += '<form id="reg-form" class="survey" data-id="' + esc(id) + '" novalidate>' +
+      U.fld("r-name", "您的姓名：", "", true, "text", ' maxlength="40" autocomplete="name"') +
+      U.fld("r-sid", "您的電話號碼（僅做為聯繫用途）：", S.sid, true, "tel", ' maxlength="20" autocomplete="tel"') +
+      U.fld("r-contact", "您的 Gmail（僅做為聯繫用途）：", "", true, "email", ' maxlength="80" autocomplete="email" placeholder="example@gmail.com"') +
+      '<fieldset class="mrow" data-row="r-gender"><legend class="f"><span>性別： <i>*</i></span></legend><div class="choices">' + ["男性", "女性", "其他"].map(function (o) { return opt("r-gender", o); }).join("") + "</div></fieldset>" +
+      '<fieldset class="mrow" data-row="r-age"><legend class="f"><span>您的年齡區間： <i>*</i></span></legend><div class="choices free">' + ["18歲以下", "19-25歲", "26-35歲", "36-45歲", "46-55歲", "56歲以上"].map(function (o) { return opt("r-age", o); }).join("") + "</div></fieldset>" +
+      '<div class="f"><span>你要報名的課程：</span><div class="fixed">' + esc(a.title || "未命名活動") + "</div></div>" +
+      '<label class="f" for="r-note"><span>有什麼想對我們說：</span><textarea id="r-note" maxlength="500"></textarea></label>' +
+      '<button class="btn" type="submit">送出報名</button>' +
+      '<p class="note">電話與 Gmail 僅做為聯繫用途。</p></form>';
+    return h + "<hr>" + cancelBox;
+  }
+
+  function fbSection(a, again) {
+    /* 這台裝置填過時先顯示感謝，但仍可再填一份（現場共用平板、或換人填寫時用） */
+    if (a.status === "feedback") return fbDone(a.id) && !again ? '<div class="ok">這台裝置已經填過這個活動的回饋問卷，謝謝您！</div>' +
+      '<button class="btn ghost" type="button" data-again="' + esc(a.id) + '">再填一份問卷</button>' : surveyForm(a.id);
+    if (a.status === "open") return '<p class="note">回饋問卷會在活動結束後開放填寫，到時再回來這裡填寫即可。</p>';
+    return '<p class="note">這個活動的回饋問卷已關閉。</p>';
   }
 
   function fbDone(id) { try { return localStorage.getItem("hub-fb-" + id) === "1"; } catch (e) { return false; } }
@@ -133,7 +159,7 @@
   function surveyForm(id) {
     var n = 0, sv = U.surveyOf(actById(id));
     var h = '<form id="fb-form" class="survey" data-id="' + esc(id) + '" novalidate>' +
-      '<h4 style="margin:0;font-size:18px">' + esc(sv.title) + "</h4>" +
+      '<h4 style="margin:0;font-size:1.125rem">' + esc(sv.title) + "</h4>" +
       (sv.intro ? '<div class="sv-intro"><p style="white-space:pre-line">' + esc(sv.intro) + "</p></div>" : "");
     sv.items.forEach(function (it) {
       if (it.type === "note") { h += '<div class="sv-note">' + esc(it.text) + "</div>"; return; }
@@ -224,10 +250,11 @@
     }
   });
   document.addEventListener("click", function (e) {
-    var t = e.target.closest("[data-act],[data-again],[data-close],[data-reload]");
+    var t = e.target.closest("[data-act],[data-view],[data-again],[data-close],[data-reload]");
     if (!t) { if (e.target === $("dlg")) U.closeDlg(); return; }
     if (t.dataset.act !== undefined) openAct(t.dataset.act);
-    else if (t.dataset.again !== undefined) openAct(t.dataset.again, true);
+    else if (t.dataset.view !== undefined) openAct(t.dataset.id, t.dataset.view);
+    else if (t.dataset.again !== undefined) openAct(t.dataset.again, "fb", true);
     else if (t.dataset.close !== undefined) U.closeDlg();
     else { S.error = ""; render(); load(); }
   });
@@ -243,10 +270,10 @@
     box.querySelector("output").textContent = e.target.value + " 分";
     var sq = e.target.closest(".sv-q"); if (sq) sq.classList.remove("miss");
   });
-  /* 回饋問卷直連：網址加上 #fb-活動編號 會直接打開該活動的問卷，可做成 QR Code 放在現場 */
+  /* 直連：網址加上 #fb-活動編號 直接打開回饋問卷，#reg-活動編號 直接打開報名表，可做成 QR Code 放在現場 */
   function openFromHash() {
-    var m = /^#fb-([A-Za-z0-9]+)$/.exec(location.hash || "");
-    if (m && actById(m[1])) openAct(m[1]);
+    var m = /^#(fb|reg)-([A-Za-z0-9]+)$/.exec(location.hash || "");
+    if (m && actById(m[2])) openAct(m[2], m[1]);
   }
   window.addEventListener("hashchange", openFromHash);
 
