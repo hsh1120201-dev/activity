@@ -1,0 +1,319 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>新竹社創基地｜活動電視牆</title>
+<link rel="icon" href="logo.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&family=Barlow+Condensed:wght@500;600;700&display=swap">
+<style>
+/* 16:9 大廳電視用。全部用 vw/vh，1080p 或 4K 電視都會填滿。深色底，品牌橘、藍當重點色。 */
+:root{
+  --bg:#14100E; --panel:#211B18; --line:#3A302B; --fg:#FBF5EE; --muted:#B5A89F;
+  --sun:#F29600; --ember:#E85A1E; --sea:#3B97E3; --ok:#4CC38A; --bad:#FF5A4E;
+  --f-body:"Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif;
+  --f-num:"Barlow Condensed","Arial Narrow",sans-serif;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font-family:var(--f-body);overflow:hidden;cursor:none}
+body{display:grid;grid-template-rows:auto 1fr auto;height:100vh;padding:2.2vh 2.4vw 0;gap:2vh}
+
+header{display:flex;align-items:center;justify-content:space-between;gap:2vw}
+.brand{display:flex;align-items:center;gap:1.4vw}
+.brand .logo{background:#fff;border-radius:1vw;padding:.8vh 1vw;display:flex}
+.brand img{height:5.6vh;width:auto}
+.brand h1{margin:0;font-size:4.4vh;font-weight:900;letter-spacing:.04em}
+.brand h1 small{display:block;font-size:1.9vh;font-weight:500;color:var(--muted);letter-spacing:.14em}
+.clock{text-align:right;font-variant-numeric:tabular-nums}
+.clock .t{font-family:var(--f-num);font-weight:700;font-size:9vh;line-height:.9}
+.clock .t span{color:var(--sun);font-size:.5em;margin-left:.3vw}
+.clock .d{font-size:2.2vh;color:var(--muted);letter-spacing:.08em}
+
+main{display:grid;grid-template-columns:1fr 27vw;gap:2vw;min-height:0}
+
+/* 主舞台：一次一個活動 */
+.stage{position:relative;background:var(--panel);border-radius:1.4vw;overflow:hidden;display:grid;grid-template-columns:var(--pw,40%) 1fr;min-height:0}
+.stage.noimg{--pw:0%}
+.poster{position:relative;overflow:hidden;background:#0c0908;min-height:0}
+.poster .blur{position:absolute;inset:-4vh;background-size:cover;background-position:center;filter:blur(3vh) brightness(.55);transform:scale(1.1)}
+.poster img{position:relative;width:100%;height:100%;object-fit:contain;display:block}
+.info{display:flex;flex-direction:column;gap:1.6vh;padding:3.4vh 2.4vw 3vh;min-width:0;min-height:0}
+.info>*{flex:none}
+.tags{display:flex;gap:.8vw;flex-wrap:wrap}
+.pill{font-size:2.3vh;font-weight:700;border-radius:99vh;padding:.5vh 1.1vw;white-space:nowrap;line-height:1.4}
+.p-open{background:var(--sun);color:#1a0f00}
+.p-hot{background:var(--ember);color:#fff}
+.p-full{background:var(--bad);color:#fff}
+.p-fb{background:var(--sea);color:#fff}
+.p-cat{border:2px solid var(--line);color:var(--muted)}
+.title{margin:0;font-size:5vh;font-weight:900;line-height:1.25;text-wrap:balance;overflow:hidden;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical}
+.stage.noimg .title{font-size:7vh}
+.title.long{font-size:4.2vh}.stage.noimg .title.long{font-size:5.6vh}
+.stage:not(.noimg) .when .md{font-size:10vh}
+.when{display:flex;align-items:flex-end;gap:1.4vw;flex-wrap:wrap}
+.when .md{font-family:var(--f-num);font-weight:700;font-size:12vh;line-height:.85;color:var(--sun);font-variant-numeric:tabular-nums}
+.when .wd{font-size:3.6vh;font-weight:900;line-height:1.1}
+.when .wd small{display:block;font-size:2.8vh;font-weight:500;color:var(--muted)}
+.cd{margin-left:auto;align-self:center;font-size:2.6vh;font-weight:700;border:2px solid var(--sun);color:var(--sun);border-radius:1vw;padding:.6vh 1vw;align-self:center}
+.cd.today{background:var(--sun);color:#1a0f00}
+.place{font-size:2.8vh;display:flex;gap:.6vw;align-items:baseline}
+.place b{color:var(--muted);font-weight:500;flex:none}
+.desc{font-size:2.3vh;line-height:1.6;color:var(--muted);overflow:hidden;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;white-space:pre-line;margin:0;flex:0 1 auto!important;min-height:0}
+.bottom{margin-top:auto;display:grid;grid-template-columns:1fr auto;gap:2vw;align-items:end}
+.cap .k{font-size:2.3vh;color:var(--muted)}
+.cap .n{font-family:var(--f-num);font-weight:700;font-size:6vh;line-height:1;font-variant-numeric:tabular-nums}
+.cap .n small{font-size:.5em;color:var(--muted);margin-left:.4vw}
+.bar{height:1.2vh;border-radius:1vh;background:var(--line);overflow:hidden;margin-top:1vh}
+.bar i{display:block;height:100%;background:var(--ok);transition:width 1s}
+.bar i.hot{background:var(--ember)} .bar i.full{background:var(--bad)}
+.qr{background:#fff;color:#231815;border-radius:1.2vw;padding:1.4vh;display:grid;justify-items:center;gap:.6vh;width:25vh}
+.qr svg{width:22vh;height:22vh;display:block}
+.qr b{font-size:2.4vh;font-weight:900;letter-spacing:.06em}
+.qr.fb b{color:#1E5E99}
+.prog{position:absolute;left:0;bottom:0;height:.7vh;background:var(--sun);width:0}
+.prog.run{animation:prog linear forwards}
+@keyframes prog{to{width:100%}}
+.fade{animation:fade .8s both}
+@keyframes fade{from{opacity:0;transform:translateY(1.5vh)}to{opacity:1;transform:none}}
+
+/* 右側：活動一覽 */
+.side{display:grid;grid-template-rows:auto 1fr auto;gap:1.4vh;min-height:0}
+.side h2{margin:0;font-size:3.2vh;font-weight:900;display:flex;justify-content:space-between;align-items:baseline}
+.side h2 span{font-family:var(--f-num);font-size:2.6vh;color:var(--muted);font-weight:600}
+.list{list-style:none;margin:0;padding:0;display:grid;grid-auto-rows:min-content;gap:1vh;min-height:0;overflow:hidden}
+.row{display:grid;grid-template-columns:9.5vh 1fr;gap:1vw;align-items:center;background:var(--panel);border-radius:1vw;padding:1.2vh 1vw;border-left:.45vw solid var(--sun);transition:background .5s,transform .5s}
+.row.fb{border-left-color:var(--sea)}
+.row.on{background:#4A3218;box-shadow:inset 0 0 0 2px var(--sun)}
+.row.fb.on{background:#1B2E42;box-shadow:inset 0 0 0 2px var(--sea)}
+.row .d{font-family:var(--f-num);font-weight:700;font-size:3.6vh;line-height:1;text-align:center;font-variant-numeric:tabular-nums}
+.row .d small{display:block;font-family:var(--f-body);font-size:1.6vh;color:var(--muted);font-weight:500;margin-top:.3vh}
+.row .tt{font-size:2.3vh;font-weight:700;line-height:1.35;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.row .sub{font-size:1.7vh;color:var(--muted);margin-top:.2vh;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.site{background:#fff;color:#231815;border-radius:1vw;padding:1.2vh 1vw;display:grid;grid-template-columns:auto 1fr;gap:1vw;align-items:center}
+.site svg{width:11vh;height:11vh;display:block}
+.site b{display:block;font-size:2.3vh;font-weight:900}
+.site span{font-size:1.8vh;color:#6F625C;line-height:1.5;display:block}
+
+.empty{grid-column:1/-1;display:grid;place-items:center;text-align:center;gap:2vh;padding:4vh}
+.empty b{font-size:6vh;font-weight:900}
+.empty p{margin:0;font-size:3vh;color:var(--muted)}
+
+footer{height:6vh;display:flex;align-items:center;border-top:1px solid var(--line);overflow:hidden;white-space:nowrap;font-size:2.4vh;color:var(--muted)}
+.tickwrap{flex:1;overflow:hidden}
+.tick{display:inline-block;padding-left:100%;animation:tick linear infinite}
+.tick b{color:var(--fg);margin:0 .4vw}.tick em{font-style:normal;color:var(--sun);margin:0 2vw}
+@keyframes tick{to{transform:translateX(-100%)}}
+.live{flex:none;display:flex;align-items:center;gap:.6vw;padding-right:1.5vw;margin-right:1.5vw;border-right:1px solid var(--line);color:var(--fg);font-weight:700;background:var(--bg);position:relative;z-index:1}
+.live i{width:1.2vh;height:1.2vh;border-radius:50%;background:var(--ok);animation:pulse 1.6s infinite}
+.live.err i{background:var(--bad);animation:none}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(76,195,138,.6)}70%{box-shadow:0 0 0 1vh rgba(76,195,138,0)}100%{box-shadow:0 0 0 0 rgba(76,195,138,0)}}
+
+/* 有人報名時跳出的通知 */
+.toasts{position:fixed;right:2.4vw;top:14vh;display:grid;gap:1.4vh;width:34vw;z-index:9}
+.toast{background:#fff;color:#231815;border-radius:1.2vw;padding:2vh 1.6vw;box-shadow:0 2vh 6vh rgba(0,0,0,.5);display:grid;gap:.6vh;border-left:1vw solid var(--ok);animation:tin .7s cubic-bezier(.2,1.3,.4,1) both}
+.toast.new{border-left-color:var(--ember)}
+.toast .k{font-size:2.1vh;font-weight:900;letter-spacing:.14em;color:#6F625C}
+.toast .tt{font-size:3vh;font-weight:900;line-height:1.3}
+.toast .m{font-size:2.1vh;color:#6F625C}
+.toast.out{animation:tout .5s both}
+@keyframes tin{from{opacity:0;transform:translateX(50vw)}to{opacity:1;transform:none}}
+@keyframes tout{to{opacity:0;transform:translateX(50vw)}}
+.setup{position:fixed;inset:0;display:grid;place-items:center;background:var(--bg);font-size:3vh;text-align:center;color:var(--muted);z-index:10}
+.setup b{display:block;color:var(--fg);font-size:4vh;margin-bottom:1vh}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+<script src="config.js?v=20261124"></script>
+<script src="qrcode.js"></script>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <div class="logo"><img src="logo.svg" alt="新竹社創基地"></div>
+    <h1><small>新竹社會創新基地・活動報名</small><span id="ttl">近期活動</span></h1>
+  </div>
+  <div class="clock"><div class="t"><span id="hm" style="all:unset">--:--</span><span id="ss">--</span></div><div class="d" id="date">—</div></div>
+</header>
+
+<main>
+  <section class="stage noimg" id="stage"><div class="empty"><b>載入中…</b></div></section>
+  <aside class="side">
+    <h2>活動一覽<span id="cnt"></span></h2>
+    <ul class="list" id="list"></ul>
+    <div class="site"><div id="siteQr"></div><div><b>所有活動・報名平台</b><span>掃描看全部活動<br>報名、取消、填回饋</span></div></div>
+  </aside>
+</main>
+
+<footer>
+  <div class="live" id="live"><i></i><span id="liveT">連線中</span></div>
+  <div class="tickwrap"><span class="tick" id="tick"></span></div>
+</footer>
+<div class="toasts" id="toasts"></div>
+
+<script>
+/* 網址參數（都可以不加）：
+   ?sec=15   每個活動停留秒數
+   ?poll=60  幾秒向資料庫抓一次
+   ?fb=0     不顯示「回饋中」的活動
+   ?cat=類別  只顯示某個類別（後台的「類別」欄位）*/
+const API=window.API_URL||"";
+const Q=new URLSearchParams(location.search);
+const SEC=Math.max(6,+Q.get("sec")||15)*1000;
+const POLL=Math.max(20,+Q.get("poll")||60)*1000;
+const SHOW_FB=Q.get("fb")!=="0";
+const CAT=Q.get("cat")||"";
+const FB_DAYS=14; // 活動結束後幾天內仍顯示「填寫回饋」
+const $=id=>document.getElementById(id);
+const WD=["日","一","二","三","四","五","六"];
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const SITE=new URL("./",location.href).href;
+const pageUrl=(a,v)=>`${SITE}?id=${encodeURIComponent(a.id)}${v?"&v="+v:""}`;
+
+function tpe(){const p=new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Taipei",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",second:"2-digit",hourCycle:"h23",weekday:"short"}).formatToParts(new Date());const g=t=>p.find(x=>x.type===t).value;return{date:`${g("year")}-${g("month")}-${g("day")}`,h:g("hour"),m:g("minute"),s:g("second"),wd:{Sun:0,Mon:1,Tue:2,Wed:3,Thu:4,Fri:5,Sat:6}[g("weekday")]}}
+const okDate=s=>/^\d{4}-\d{2}-\d{2}$/.test(s||"");
+const parse=s=>{const[y,m,d]=s.split("-").map(Number);return new Date(Date.UTC(y,m-1,d))};
+const diff=(a,b)=>Math.round((parse(a)-parse(b))/864e5);
+const md=s=>okDate(s)?`${+s.slice(5,7)}/${+s.slice(8,10)}`:"未定";
+const wdOf=s=>okDate(s)?"週"+WD[parse(s).getUTCDay()]:"";
+
+function qrSvg(text){const q=qrcode(0,"M");q.addData(unescape(encodeURIComponent(text)));q.make();return q.createSvgTag({cellSize:4,margin:0,scalable:true})}
+
+function tickClock(){const n=tpe();$("hm").textContent=`${n.h}:${n.m}`;$("ss").textContent=n.s;$("date").textContent=`${n.date.replace(/-/g,"/")}（${WD[n.wd]}）`}
+setInterval(tickClock,1000);tickClock();
+$("siteQr").innerHTML=qrSvg(SITE);
+if(CAT)$("ttl").textContent=CAT;
+
+let acts=null,counts={},items=[],cur=0,curId="",timer=null;
+
+/* 要上電視的活動：報名中（今天以後或未定日期）在前，依日期近到遠；回饋中（結束 14 天內）在後 */
+function pick(){
+  const T=tpe().date;
+  const list=(acts||[]).filter(a=>a&&a.title&&(!CAT||a.semester===CAT));
+  const open=list.filter(a=>a.status==="open"&&(!okDate(a.date)||a.date>=T))
+    .sort((a,b)=>(okDate(a.date)?a.date:"9999").localeCompare(okDate(b.date)?b.date:"9999"));
+  const fb=SHOW_FB?list.filter(a=>a.status==="feedback"&&(!okDate(a.date)||(a.date<=T&&diff(T,a.date)<=FB_DAYS)))
+    .sort((a,b)=>(b.date||"").localeCompare(a.date||"")):[];
+  return open.concat(fb);
+}
+
+function capInfo(a){
+  const n=counts[a.id]||0,c=a.capacity||0;
+  if(!c)return{n,c,pct:0,cls:"",left:null};
+  const pct=Math.min(100,Math.round(n/c*100)),left=Math.max(0,c-n);
+  return{n,c,pct,left,cls:left===0?"full":(left<=5||pct>=80)?"hot":""};
+}
+
+function slide(a){
+  const T=tpe().date, fb=a.status==="feedback", ci=capInfo(a);
+  const st=$("stage");
+  const img=a.image?String(a.image):"";
+  st.classList.toggle("noimg",!img);
+  let tag=fb?`<span class="pill p-fb">回饋中</span>`:ci.cls==="full"?`<span class="pill p-full">已額滿</span>`:ci.cls==="hot"?`<span class="pill p-hot">即將額滿・剩 ${ci.left} 位</span>`:`<span class="pill p-open">報名中</span>`;
+  if(a.semester)tag+=`<span class="pill p-cat">${esc(a.semester)}</span>`;
+  let cd="";
+  if(okDate(a.date)&&!fb){const d=diff(a.date,T);cd=d===0?`<span class="cd today">就是今天</span>`:d===1?`<span class="cd">明天</span>`:`<span class="cd">還有 ${d} 天</span>`}
+  const when=okDate(a.date)?`<div class="when"><span class="md">${md(a.date)}</span><span class="wd">${wdOf(a.date)}${a.time?`<small>${esc(a.time)}</small>`:""}</span></div>`
+    :`<div class="when"><span class="wd">日期未定${a.time?`<small>${esc(a.time)}</small>`:""}</span></div>`;
+  const cap=fb?`<div class="cap"><div class="k">活動已結束</div><div class="n" style="font-size:3.4vh;font-family:var(--f-body);font-weight:900;line-height:1.4">感謝參加，請幫我們填寫回饋問卷</div></div>`
+    :`<div class="cap"><div class="k">${ci.c?"報名人數":"目前已報名"}</div><div class="n">${ci.n}${ci.c?`<small>/ ${ci.c} 人</small>`:"<small>人</small>"}</div>${ci.c?`<div class="bar"><i class="${ci.cls}" style="width:${ci.pct}%"></i></div>`:""}</div>`;
+  const full=!fb&&ci.cls==="full";
+  const qr=full?"":`<div class="qr${fb?" fb":""}">${qrSvg(pageUrl(a,fb?"fb":"reg"))}<b>${fb?"掃碼填寫回饋":"手機掃碼報名"}</b></div>`;
+  st.innerHTML=(img?`<div class="poster"><div class="blur" style="background-image:url('${esc(img)}')"></div><img src="${esc(img)}" alt="" onerror="this.closest('.stage').classList.add('noimg');this.parentNode.remove()"></div>`:"<div></div>")+
+    `<div class="info fade"><div class="tags">${tag}${cd}</div><h2 class="title${a.title.length>22?" long":""}">${esc(a.title)}</h2>${when}`+
+    (a.location?`<div class="place"><b>地點</b><span>${esc(a.location)}</span></div>`:"")+
+    (a.description?`<p class="desc">${esc(String(a.description).replace(/\*\*|!?\[[^\]]*\]\([^)]*\)|https?:\/\/\S+/g,"").trim())}</p>`:"")+
+    `<div class="bottom">${cap}${qr}</div></div>`+
+    `<i class="prog" id="prog"></i>`;
+  fitDesc();
+  const p=$("prog");if(items.length>1){p.style.animationDuration=SEC+"ms";p.classList.add("run")}
+  // 先載入下一張圖，切換時才不會空白
+  const nx=items[(cur+1)%items.length];if(nx&&nx.image){const im=new Image();im.src=nx.image}
+}
+
+/* 簡介只顯示放得下的整行，不切半行 */
+function fitDesc(){const d=document.querySelector(".desc");if(!d)return;d.style.webkitLineClamp=3;d.style.maxHeight="";
+  const lh=parseFloat(getComputedStyle(d).lineHeight),n=Math.min(3,Math.floor((d.clientHeight+1)/lh));
+  if(n<1)d.remove();else{d.style.webkitLineClamp=n;d.style.maxHeight=n*lh+"px"}}
+document.fonts&&document.fonts.ready.then(fitDesc);
+function renderList(){
+  $("cnt").textContent=items.length?`${items.length} 場`:"";
+  const max=7, start=items.length>max?Math.min(Math.max(0,cur-2),items.length-max):0;
+  $("list").innerHTML=items.slice(start,start+max).map(a=>{
+    const fb=a.status==="feedback",ci=capInfo(a);
+    const sub=fb?"回饋中・掃碼填問卷":[a.time,ci.c?(ci.left===0?"已額滿":`剩 ${ci.left} 位`):""].filter(Boolean).join("・");
+    return `<li class="row${fb?" fb":""}${a.id===curId?" on":""}"><div class="d">${md(a.date)}<small>${wdOf(a.date)}</small></div><div><div class="tt">${esc(a.title)}</div><div class="sub">${esc(sub)}</div></div></li>`}).join("");
+}
+
+function show(i){
+  if(!items.length){
+    curId="";$("stage").className="stage noimg";
+    $("stage").innerHTML=`<div class="empty"><b>近期活動籌備中</b><p>新活動上架後會顯示在這裡</p><p>掃描右下角 QR code 看所有活動</p></div>`;
+    renderList();return;
+  }
+  cur=(i+items.length)%items.length;curId=items[cur].id;
+  slide(items[cur]);renderList();
+}
+function next(){show(cur+1)}
+function restart(){clearInterval(timer);timer=setInterval(next,SEC)}
+
+function rebuild(){
+  items=pick();
+  const i=items.findIndex(a=>a.id===curId);
+  if(i<0){show(0);restart()}else{cur=i;renderList()}
+  const T=tpe().date;
+  const up=items.filter(a=>a.status==="open").slice(0,10).map(a=>`<b>${md(a.date)}</b>${esc(a.title)}`);
+  const txt=(up.length?up.join("<em>●</em>")+"<em>●</em>":"")+"新竹社會創新基地｜新竹縣竹北市中山路220號3樓（同心樓）<em>●</em>聯絡電話 03-5593142 分機 3529<em>●</em>活動報名請掃描畫面上的 QR code";
+  const tk=$("tick");if(tk.dataset.k!==txt){tk.dataset.k=txt;tk.innerHTML=txt;tk.style.animationDuration=Math.max(30,tk.textContent.length*.35)+"s"}
+}
+
+/* 有新報名時跳通知 */
+const queue=[];let showing=0;
+function toast(kind,label,title,meta){queue.push({kind,label,title,meta});pump()}
+function pump(){while(showing<2&&queue.length){const q=queue.shift();showing++;const el=document.createElement("div");el.className="toast "+q.kind;
+  el.innerHTML=`<span class="k">${esc(q.label)}</span><span class="tt">${esc(q.title)}</span><span class="m">${esc(q.meta)}</span>`;$("toasts").appendChild(el);
+  setTimeout(()=>{el.classList.add("out");setTimeout(()=>{el.remove();showing--;pump()},500)},8000)}}
+function diffPush(oldActs,oldCounts){
+  const had=new Set(oldActs.map(a=>a.id));
+  for(const a of items){
+    if(!had.has(a.id)&&a.status==="open"){toast("new","新活動開放報名",a.title,`${md(a.date)} ${wdOf(a.date)}${a.time?" "+a.time:""}`);continue}
+    const d=(counts[a.id]||0)-(oldCounts[a.id]||0);
+    if(d>0&&a.status==="open"){const ci=capInfo(a);toast("ok",`🎉 新增 ${d} 位報名`,a.title,ci.c?`已報名 ${ci.n} / ${ci.c} 人${ci.left===0?"・已額滿":""}`:`已報名 ${ci.n} 人`)}
+  }
+}
+
+let busy=false;
+async function load(){
+  if(busy)return;busy=true;
+  try{
+    const r=await fetch(API,{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify({action:"list"})});
+    const j=await r.json();if(!j.ok)throw new Error(j.error);
+    const oa=acts,oc=counts;
+    acts=j.activities||[];counts=j.counts||{};
+    rebuild();
+    if(oa)diffPush(oa,oc);
+    if(curId&&items[cur])slideRefresh();
+    $("live").classList.remove("err");$("liveT").textContent="即時同步";
+  }catch(e){$("live").classList.add("err");$("liveT").textContent="連線中斷，重試中";if(!acts){$("stage").innerHTML=`<div class="empty"><b>暫時連不上資料庫</b><p>會自動重試</p></div>`}}
+  finally{busy=false}
+}
+/* 報名人數變了就只更新數字，不重播動畫 */
+function slideRefresh(){
+  const a=items[cur];if(a.status!=="open")return;const ci=capInfo(a);
+  const n=document.querySelector(".cap .n"),b=document.querySelector(".bar i");
+  if(n)n.innerHTML=`${ci.n}${ci.c?`<small>/ ${ci.c} 人</small>`:"<small>人</small>"}`;
+  if(b){b.style.width=ci.pct+"%";b.className=ci.cls}
+}
+
+if(window.DEMO){acts=DEMO.activities;counts=DEMO.counts;rebuild();$("liveT").textContent="示範資料"}
+else if(!/^https:\/\/script\.google\.com\/.+\/exec$/.test(API)){
+  document.body.insertAdjacentHTML("beforeend",`<div class="setup"><div><b>尚未設定資料來源</b>請把 Apps Script 的 /exec 網址填進 config.js</div></div>`);
+}else{load();setInterval(load,POLL)}
+setInterval(()=>{if(acts)rebuild()},10*60*1000); // 過午夜時更新「還有幾天」與清單
+try{navigator.wakeLock&&navigator.wakeLock.request("screen").catch(()=>{})}catch(e){}
+document.addEventListener("click",()=>{try{document.fullscreenElement||document.documentElement.requestFullscreen().catch(()=>{})}catch(e){}});
+setTimeout(()=>location.reload(),6*3600*1000); // 每 6 小時重新整理，避免長時間掛著卡住
+</script>
+</body>
+</html>
