@@ -198,6 +198,8 @@
   });
 
   function fbLink(id) { return new URL("./", location.href).href + "#fb-" + id; }
+  /* 每個活動的專屬網頁，可貼到 FB／LINE */
+  function actLink(id) { return new URL("./", location.href).href + "?id=" + encodeURIComponent(id); }
   function avg(list) { return list.length ? list.reduce(function (a, b) { return a + b; }, 0) / list.length : null; }
   function bar(p) { return '<span class="bar"><i style="width:' + Math.round(p * 100) + '%"></i></span>'; }
 
@@ -301,7 +303,7 @@
       h += acts.length ? acts.map(function (a) {
         return '<div class="arow">' + (a.image ? '<img class="athumb" src="' + esc(a.image) + '" alt="" loading="lazy">' : '<span class="athumb empty">無圖片</span>') + '<div class="info"><strong>' + esc(a.title || "未命名活動") + "</strong>" +
           '<span class="tags"><span class="pill ' + esc(a.status) + '">' + esc(U.STATUS[a.status] || "") + '</span><span class="cnt">' + esc(U.dparts(a.date).full) + " · " + esc(U.capText(a, S.counts)) + "</span></span></div>" +
-          '<div class="row"><button class="btn ghost sm" type="button" data-edit="' + esc(a.id) + '">編輯</button><button class="btn ghost sm" type="button" data-survey="' + esc(a.id) + '">回饋問卷</button><button class="btn danger sm" type="button" data-del="' + esc(a.id) + '">刪除</button></div></div>';
+          '<div class="row"><button class="btn ghost sm" type="button" data-edit="' + esc(a.id) + '">編輯</button><button class="btn ghost sm" type="button" data-survey="' + esc(a.id) + '">回饋問卷</button><button class="btn ghost sm" type="button" data-actlink="' + esc(a.id) + '">複製活動頁連結</button><a class="btn ghost sm" href="' + esc(actLink(a.id)) + '" target="_blank" rel="noopener">開啟活動頁</a><button class="btn danger sm" type="button" data-del="' + esc(a.id) + '">刪除</button></div></div>';
       }).join("") : '<div class="panel"><p class="note">還沒有活動。按「新增活動」建立第一個。</p></div>';
       h += "</div>";
     } else if (!S.acts.length) {
@@ -392,7 +394,7 @@
     }
   });
   document.addEventListener("click", function (e) {
-    var t = e.target.closest("[data-close],[data-tab],[data-logout],[data-new],[data-edit],[data-del],[data-rm],[data-csv],[data-copy],[data-fbcsv],[data-copylink],[data-noimg],[data-mail],[data-tag],[data-savetpl],[data-deltpl],[data-survey],[data-qadd],[data-qmove],[data-qdel],[data-svsave],[data-svreset],[data-svapply],[data-svtpl],[data-svdeltpl]");
+    var t = e.target.closest("[data-close],[data-tab],[data-logout],[data-new],[data-edit],[data-del],[data-rm],[data-csv],[data-copy],[data-fbcsv],[data-copylink],[data-actlink],[data-noimg],[data-mail],[data-tag],[data-savetpl],[data-deltpl],[data-survey],[data-qadd],[data-qmove],[data-qdel],[data-svsave],[data-svreset],[data-svapply],[data-svtpl],[data-svdeltpl]");
     if (!t) { if (e.target === $("dlg")) U.closeDlg(); return; }
     var d = t.dataset;
     if (d.close !== undefined) U.closeDlg();
@@ -462,6 +464,9 @@
       mailPreview();
     } else if (d.noimg !== undefined) {
       $("e-image").value = ""; $("e-preview").innerHTML = '<span class="note">尚未上傳圖片</span>'; t.hidden = true;
+    } else if (d.actlink !== undefined) {
+      var al = actLink(d.actlink);
+      navigator.clipboard.writeText(al).then(function () { U.toast("活動頁連結已複製，可直接貼到 FB 或 LINE。"); }, function () { U.toast("無法自動複製，連結是：" + al); });
     } else if (d.copylink !== undefined) {
       navigator.clipboard.writeText(fbLink(S.pick)).then(function () { U.toast("連結已複製。"); }, function () { U.toast("無法自動複製，請直接選取連結文字複製。"); });
     } else if (d.copy !== undefined) {

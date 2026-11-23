@@ -31,6 +31,8 @@
       </div>
       <div id="list" class="list"><div class="panel"><p class="note">載入中…</p></div></div>
     </section>
+    <!-- 單一活動頁：網址加上 ?id=活動編號 時顯示 -->
+    <section id="single" class="single" hidden aria-live="polite"><div class="panel"><p class="note">載入中…</p></div></section>
   </main>
 </div>
 
@@ -43,7 +45,32 @@
 (function () {
   "use strict";
   var $ = U.$, esc = U.esc;
-  var S = { acts: [], counts: {}, loaded: false, error: "", sid: "", busy: false };
+  var S = { acts: [], counts: {}, loaded: false, error: "", sid: "", busy: false, view: "", flash: "" };
+  /* 每個活動都有自己的網頁：index.html?id=活動編號（可加 &v=reg 或 &v=fb 直接開報名表或問卷） */
+  var QS = new URLSearchParams(location.search);
+  S.single = (QS.get("id") || "").replace(/[^A-Za-z0-9]/g, "");
+  if (S.single) {
+    document.body.classList.add("is-single");
+    document.querySelector(".hero").hidden = true;
+    document.querySelector('section[aria-labelledby="h-list"]').hidden = true;
+    $("single").hidden = false;
+  }
+  function pageHead(t) {
+    return '<a class="back" href="./">← 所有活動</a><h2 id="dlg-title" class="single-title">' + esc(t) + "</h2>";
+  }
+  function show(h) {
+    if (!S.single) { U.showDlg(h); return; }
+    $("single").innerHTML = '<div class="panel dlg">' + (S.flash ? '<div class="ok">' + esc(S.flash) + "</div>" : "") + h + "</div>";
+    S.flash = "";
+  }
+  function renderSingle() {
+    if (!S.single) return;
+    if (!U.configured()) { $("single").innerHTML = U.SETUP_NOTE; return; }
+    if (S.error) { $("single").innerHTML = '<div class="panel"><p class="note">' + esc(S.error) + '</p><p style="margin:10px 0 0"><button class="btn ghost sm" type="button" data-reload>重新載入</button></p></div>'; return; }
+    if (!S.loaded) return;
+    if (!actById(S.single)) { $("single").innerHTML = '<div class="panel dlg">' + pageHead("找不到這個活動") + '<p class="note">這個活動可能已經刪除，或網址有誤。</p></div>'; document.title = "找不到活動｜新竹社會創新基地"; return; }
+    openAct(S.single, S.view || QS.get("v") || "");
+  }
   try { S.sid = localStorage.getItem("must-sid") || ""; } catch (e) {}
 
   function actById(id) { for (var i = 0; i < S.acts.length; i++) if (S.acts[i].id === id) return S.acts[i]; return null; }
@@ -96,18 +123,20 @@
   }
 
   function load() {
-    if (!U.configured()) { render(); return Promise.resolve(); }
-    return U.api("list").then(function (j) { S.acts = j.activities || []; S.counts = j.counts || {}; S.loaded = true; S.error = ""; render(); },
-      function (e) { if (!S.loaded) S.error = e.message; render(); });
+    if (!U.configured()) { render(); renderSingle(); return Promise.resolve(); }
+    return U.api("list").then(function (j) { S.acts = j.activities || []; S.counts = j.counts || {}; S.loaded = true; S.error = ""; render(); renderSingle(); },
+      function (e) { if (!S.loaded) S.error = e.message; render(); renderSingle(); });
   }
   function remember(sid) { S.sid = sid; try { localStorage.setItem("must-sid", sid); } catch (e) {} }
 
   /* 報名與回饋是兩個獨立按鈕：view 為 "reg"（報名）或 "fb"（回饋），沒指定時依活動狀態決定先顯示哪一個；again 為 true 時，填過的裝置也直接顯示問卷 */
   function openAct(id, view, again) {
     var a = actById(id); if (!a) { U.closeDlg(); return; }
+    if (S.single) document.title = (a.title || "未命名活動") + "｜新竹社會創新基地活動報名平台";
     if (view !== "reg" && view !== "fb") view = a.status === "feedback" ? "fb" : a.status === "open" ? "reg" : "";
     var d = U.dparts(a.date);
-    var h = U.head(a.title || "未命名活動") +
+    S.view = view;
+    var h = (S.single ? pageHead(a.title || "未命名活動") : U.head(a.title || "未命名活動")) +
       (a.image ? '<a class="poster" href="' + esc(a.image) + '" target="_blank" rel="noopener"><img src="' + esc(a.image) + '" alt="' + esc(a.title || "活動圖片") + '" onerror="this.parentNode.remove()"></a>' : "") +
       '<div class="tags"><span class="pill ' + esc(a.status) + '">' + esc(U.STATUS[a.status] || "") + '</span><span class="cnt">' + esc(U.capText(a, S.counts)) + "</span></div>" +
       '<dl class="meta"><dt>日期</dt><dd>' + esc(d.full) + "</dd>" +
@@ -115,12 +144,12 @@
       (a.location ? "<dt>地點</dt><dd>" + esc(a.location) + "</dd>" : "") +
       (a.semester ? "<dt>類別</dt><dd>" + esc(a.semester) + "</dd>" : "") + "</dl>" +
       (a.description ? '<p class="desc">' + esc(a.description) + "</p>" : "") +
-      actBtns(a, view) + "<hr>";
+      actBtns(a, view) + (S.single ? "" : '<p class="note page-link"><a href="?id=' + encodeURIComponent(a.id) + '">開啟這個活動的專屬網頁</a></p>') + "<hr>";
 
     if (view === "reg") h += regSection(a);
     else if (view === "fb") h += fbSection(a, again);
     else h += '<p class="note">這個活動已結束。</p>';
-    U.showDlg(h);
+    show(h);
   }
 
   function regSection(a) {
@@ -216,7 +245,8 @@
     U.api(action, data).then(function (j) {
       U.toast(typeof okMsg === "function" ? okMsg(j) : okMsg);
       if (after) after();
-      return load().then(function () { U.closeDlg(); });
+      if (S.single) S.flash = typeof okMsg === "function" ? okMsg(j) : okMsg;
+      return load().then(function () { if (!S.single) U.closeDlg(); else window.scrollTo({ top: 0, behavior: "smooth" }); });
     }, function (e) { U.toast(e.message); btn.disabled = false; btn.textContent = label; })
       .then(function () { S.busy = false; });
   }
@@ -256,7 +286,7 @@
     else if (t.dataset.view !== undefined) openAct(t.dataset.id, t.dataset.view);
     else if (t.dataset.again !== undefined) openAct(t.dataset.again, "fb", true);
     else if (t.dataset.close !== undefined) U.closeDlg();
-    else { S.error = ""; render(); load(); }
+    else { S.error = ""; render(); renderSingle(); load(); }
   });
   document.addEventListener("change", function (e) {
     if (e.target.id === "f-sem" || e.target.id === "f-status") render();
@@ -273,7 +303,7 @@
   /* 直連：網址加上 #fb-活動編號 直接打開回饋問卷，#reg-活動編號 直接打開報名表，可做成 QR Code 放在現場 */
   function openFromHash() {
     var m = /^#(fb|reg)-([A-Za-z0-9]+)$/.exec(location.hash || "");
-    if (m && actById(m[2])) openAct(m[2], m[1]);
+    if (m && actById(m[2])) { if (S.single && m[2] !== S.single) { location.href = "?id=" + m[2] + "&v=" + m[1]; return; } openAct(m[2], m[1]); }
   }
   window.addEventListener("hashchange", openFromHash);
 
