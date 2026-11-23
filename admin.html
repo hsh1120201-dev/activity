@@ -300,10 +300,16 @@
   function fbOverview() {
     var acts = U.sortActs(S.acts), list = acts.map(fbSummaryOf), total = S.fbs.length;
     return '<div class="panel stat"><div><b>' + total + '</b> 份<br><span class="cnt">全部回饋（' + acts.length + " 個活動）</span></div>" +
-      '<div class="row noprint" style="margin-left:auto"><button class="btn sm" type="button" data-fbxlsxall>下載全部回饋（Excel）</button><button class="btn ghost sm" type="button" data-fbprint>列印／存成 PDF</button></div></div>' +
+      '<div class="row noprint" style="margin-left:auto"><button class="btn sm" type="button" data-fbxlsxall>下載全部回饋（Excel）</button><button class="btn ghost sm" type="button" data-allcharts="all-">下載全部圖表</button><button class="btn ghost sm" type="button" data-fbprint>列印／存成 PDF</button></div></div>' +
       '<div class="scroll" style="margin-top:12px"><table class="mtable"><thead><tr><th>活動</th><th>日期</th><th>狀態</th><th class="num">報名</th><th class="num">回饋</th><th class="num">填答率</th><th class="num">整體滿意度</th><th class="num">評分平均（5 分制）</th><th class="num">意願分數平均</th></tr></thead><tbody>' +
       list.map(function (x) { return '<tr><td class="wrapc">' + esc(x.title) + "</td><td>" + esc(x.date) + "</td><td>" + esc(x.status) + '</td><td class="num">' + x.regs + '</td><td class="num">' + x.fbs + '</td><td class="num">' + x.rate + '</td><td class="num">' + (x.sat || "—") + '</td><td class="num">' + (x.score === "" ? "—" : x.score) + '</td><td class="num">' + (x.slider === "" ? "—" : x.slider) + "</td></tr>"; }).join("") +
-      '</tbody></table></div><p class="note" style="margin-top:8px">評分平均：把所有評分題換算成 5 分制後平均（最滿意 5 分）。意願分數：拉桿題（例如「再次參加的意願」）的平均。想看單一活動的每題分析，請在上方選擇該活動。</p>';
+      "</tbody></table></div>" + (function () {
+        S.charts = {};
+        var withFb = list.filter(function (x) { return x.score !== ""; });
+        return withFb.length ? chartBox("all-score", { title: "各活動評分平均（5 分制）", file: "各活動評分平均", max: 5, rows: withFb.map(function (x) { return { label: x.title, value: +x.score, text: String(x.score) }; }) }) +
+          chartBox("all-sat", { title: "各活動整體滿意度", file: "各活動整體滿意度", max: 100, rows: withFb.filter(function (x) { return x.sat; }).map(function (x) { return { label: x.title, value: parseFloat(x.sat), text: x.sat }; }) }) +
+          chartBox("all-count", { title: "各活動有效問卷份數", file: "各活動有效問卷份數", rows: list.filter(function (x) { return x.fbs; }).map(function (x) { return { label: x.title, value: x.fbs, text: x.fbs + " 份" }; }) }) : "";
+      })() + '<p class="note" style="margin-top:8px">評分平均：把所有評分題換算成 5 分制後平均（最滿意 5 分）。意願分數：拉桿題（例如「再次參加的意願」）的平均。想看單一活動的每題分析，請在上方選擇該活動。</p>';
   }
   /* Excel 匯出：需要時才載入 SheetJS */
   var xlsxReady;
@@ -335,8 +341,60 @@
       saveBlob(new Blob([data], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), name + ".xlsx");
     }).catch(function (e) { U.toast(e.message); });
   }
+
+  /* ---------- 圖表（SVG 橫條圖，可下載成 PNG） ---------- */
+  S.charts = {};
+  var PAL_SCREEN = { bar: "var(--accent)", ink: "var(--ink)", muted: "var(--muted)", line: "var(--line)", bg: "none" };
+  var PAL_PNG = { bar: "#0f6b5c", ink: "#14302b", muted: "#566b65", line: "#d3dcd6", bg: "#ffffff" };
+  function textW(t, size) { var w = 0; String(t).split("").forEach(function (c) { w += /[\u0000-ÿ]/.test(c) ? size * 0.58 : size; }); return w; }
+  function fitText(t, size, maxW) { t = String(t); if (textW(t, size) <= maxW) return t; while (t.length > 1 && textW(t + "…", size) > maxW) t = t.slice(0, -1); return t + "…"; }
+  function chartSVG(c, P) {
+    var W = 640, fs = 13, rowH = 32, barH = 18, top = 44, padR = 96;
+    var labW = Math.min(240, Math.max(60, Math.max.apply(null, c.rows.map(function (r) { return textW(r.label, fs); })) + 8));
+    var x0 = 16 + labW + 8, plotW = W - x0 - padR, H = top + c.rows.length * rowH + 16;
+    var max = c.max || Math.max.apply(null, c.rows.map(function (r) { return r.value; }).concat([1]));
+    var o = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + " " + H + '" width="' + W + '" height="' + H + '" font-family="Noto Sans TC, PingFang TC, Microsoft JhengHei, sans-serif" role="img" aria-label="' + esc(c.title) + '">' +
+      (P.bg !== "none" ? '<rect width="' + W + '" height="' + H + '" fill="' + P.bg + '"/>' : "") +
+      '<text x="16" y="26" font-size="15" font-weight="700" fill="' + P.ink + '">' + esc(fitText(c.title, 15, W - 32)) + "</text>" +
+      '<line x1="' + x0 + '" y1="' + (top - 6) + '" x2="' + x0 + '" y2="' + (H - 12) + '" stroke="' + P.line + '" stroke-width="1"/>';
+    c.rows.forEach(function (r, i) {
+      var y = top + i * rowH, w = max ? Math.max(0, r.value / max * plotW) : 0, by = y + (rowH - barH) / 2 - 4;
+      o += "<g><title>" + esc(r.label + "：" + r.text) + "</title>" +
+        '<rect x="0" y="' + (y - 4) + '" width="' + W + '" height="' + rowH + '" fill="transparent"/>' +
+        '<text x="' + (x0 - 8) + '" y="' + (by + barH / 2 + 4.5) + '" font-size="' + fs + '" text-anchor="end" fill="' + P.ink + '">' + esc(fitText(r.label, fs, labW)) + "</text>" +
+        (w > 0 ? '<path d="M' + x0 + " " + by + "h" + Math.max(0, w - 4) + "a4 4 0 0 1 4 4v" + (barH - 8) + "a4 4 0 0 1 -4 4h" + (-Math.max(0, w - 4)) + 'z" fill="' + P.bar + '"/>' : "") +
+        '<text x="' + (x0 + w + 6) + '" y="' + (by + barH / 2 + 4.5) + '" font-size="12" fill="' + P.muted + '">' + esc(r.text) + "</text></g>";
+    });
+    return o + "</svg>";
+  }
+  function chartBox(key, c) {
+    S.charts[key] = c;
+    return '<figure class="chart"><div class="chart-svg">' + chartSVG(c, PAL_SCREEN) + "</div>" +
+      '<figcaption class="noprint"><button class="btn ghost sm" type="button" data-chartpng="' + esc(key) + '">下載圖表 PNG</button></figcaption></figure>';
+  }
+  function chartPNG(key) {
+    var c = S.charts[key]; if (!c) return Promise.resolve();
+    var svg = chartSVG(c, PAL_PNG), m = /width="(\d+)" height="(\d+)"/.exec(svg), w = +m[1], h = +m[2], k = 2;
+    return new Promise(function (ok) {
+      var img = new Image();
+      img.onload = function () {
+        var cv = document.createElement("canvas"); cv.width = w * k; cv.height = h * k;
+        var g = cv.getContext("2d"); g.scale(k, k); g.drawImage(img, 0, 0);
+        cv.toBlob(function (b) { saveBlob(b, (c.file || c.title) + ".png"); ok(); }, "image/png");
+      };
+      img.onerror = function () { U.toast("圖表轉檔失敗，請改用列印存成 PDF。"); ok(); };
+      img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
+    });
+  }
+  function allChartsPNG(prefix) {
+    var keys = Object.keys(S.charts).filter(function (k) { return k.indexOf(prefix) === 0; }), i = 0;
+    if (!keys.length) { U.toast("目前沒有圖表可以下載。"); return; }
+    U.toast("開始下載 " + keys.length + " 張圖表，瀏覽器如果詢問，請選「允許」下載多個檔案。");
+    (function next() { if (i >= keys.length) return; chartPNG(keys[i++]).then(function () { setTimeout(next, 350); }); })();
+  }
   function fbReport(id) {
-    var fs = fbFor(id), act = actById(id), sv = U.surveyOf(act), fields = U.surveyFields(sv);
+    var fs = fbFor(id), act = actById(id), sv = U.surveyOf(act), fields = U.surveyFields(sv), tt = (act && act.title) || "活動";
+    S.charts = {};
     var h = '<div class="panel sv-block" style="margin-bottom:14px"><h4>回饋問卷：' + esc(sv.title) + "</h4>" +
       '<p class="note">' + (act.customSurvey ? "這個活動使用自己設定的問卷。" : "這個活動使用預設的「課程滿意度調查」。") +
       (act.status === "feedback" ? "目前開放填寫，可以把連結貼到 LINE 群組，或做成 QR Code 放在現場。" : "活動狀態改為「回饋中」後，這個連結才能填寫。") + "</p>" +
@@ -353,11 +411,14 @@
       (K.overall != null ? "<div><b>" + K.overall.toFixed(2) + '</b> / 5<br><span class="cnt">整體平均</span></div>' :
         (scales.length && nsKeys.length === 1 ? "<div><b>" + (all.length ? avg(all).toFixed(2) : "—") + "</b> / " + nsKeys[0] + '<br><span class="cnt">評分題平均</span></div>' : "")) +
       K.sliders.filter(function (x) { return x.n; }).map(function (x) { return "<div><b>" + round2(x.avg) + "</b> / " + x.max + '<br><span class="cnt">' + esc(x.title) + " 平均（中位數 " + round2(x.median) + "）</span></div>"; }).join("") +
-      '<div class="row noprint" style="margin-left:auto"><button class="btn sm" type="button" data-fbxlsx>下載分析報表（Excel）</button><button class="btn ghost sm" type="button" data-fbcsv>下載原始回答 CSV</button><button class="btn ghost sm" type="button" data-fbprint>列印／存成 PDF</button></div></div>';
+      '<div class="row noprint" style="margin-left:auto"><button class="btn sm" type="button" data-fbxlsx>下載分析報表（Excel）</button><button class="btn ghost sm" type="button" data-allcharts="fb-">下載全部圖表</button><button class="btn ghost sm" type="button" data-fbcsv>下載原始回答 CSV</button><button class="btn ghost sm" type="button" data-fbprint>列印／存成 PDF</button></div></div>';
     if (K.groups.length) h += '<div class="panel sv-block" style="margin-top:12px"><h4>滿意度統計摘要</h4>' +
       '<div class="scroll"><table class="mtable"><thead><tr><th>構面</th><th class="num">細項數</th><th class="num">平均分數（滿分 5）</th></tr></thead><tbody>' +
       K.groups.map(function (g) { return "<tr><td>" + esc(g.title) + '</td><td class="num">' + g.n + '</td><td class="num"><strong>' + (g.avg == null ? "—" : g.avg.toFixed(2)) + "</strong></td></tr>"; }).join("") +
       '<tr><td><strong>整體平均</strong></td><td class="num">' + K.items + '</td><td class="num"><strong>' + (K.overall == null ? "—" : K.overall.toFixed(2)) + "</strong></td></tr></tbody></table></div>" +
+      chartBox("fb-0-summary", { title: "各構面平均分數（滿分 5）", file: tt + "-各構面平均", max: 5,
+        rows: K.groups.map(function (g) { return { label: g.title, value: g.avg || 0, text: g.avg == null ? "—" : g.avg.toFixed(2) }; })
+          .concat([{ label: "整體平均", value: K.overall || 0, text: K.overall == null ? "—" : K.overall.toFixed(2) }]) }) +
       '<p class="note">本次回收有效問卷 ' + fs.length + " 份，" + K.groups.length + " 大構面、" + K.items + " 項細項指標；整體滿意度（勾選「" + "非常滿意」或「滿意」的比例）" +
       (K.satPct == null ? "—" : Math.round(K.satPct * 1000) / 10 + "%") + "，整體平均 " + (K.overall == null ? "—" : K.overall.toFixed(2)) + " 分" +
       K.sliders.filter(function (x) { return x.n; }).map(function (x) { return "；" + esc(x.title) + "平均 " + round2(x.avg) + " 分（滿分 " + x.max + "），中位數 " + round2(x.median) + " 分"; }).join("") + "。</p></div>";
@@ -369,11 +430,17 @@
       h += '<div class="panel sv-block" style="margin-top:12px"><h4>' + n + ". " + esc(it.title.replace(/[：:]$/, "")) + "</h4>";
       if (it.type === "single" || it.type === "multi") {
         var answered = fs.filter(function (f) { var v = ansOf(f, it.id); return Array.isArray(v) ? v.length : v; }).length || 1;
-        h += '<div class="bars">' + it.options.map(function (o) {
-          var c = fs.filter(function (f) { var v = ansOf(f, it.id); return Array.isArray(v) ? v.indexOf(o) >= 0 : v === o; }).length;
-          return "<span>" + esc(o) + "</span>" + bar(c / answered) + "<span>" + c + "（" + pct(c, answered) + "）</span>";
-        }).join("") + "</div>" + (it.type === "multi" ? '<p class="note">複選題，長條是選這項的人占作答人數的比例。</p>' : "");
+        h += chartBox("fb-" + n, { title: n + ". " + it.title.replace(/[：:]$/, "") + "（n=" + fs.filter(function (f) { var v = ansOf(f, it.id); return Array.isArray(v) ? v.length : v; }).length + "）", file: tt + "-第" + n + "題", max: answered,
+          rows: it.options.map(function (o) {
+            var c = fs.filter(function (f) { var v = ansOf(f, it.id); return Array.isArray(v) ? v.indexOf(o) >= 0 : v === o; }).length;
+            return { label: o, value: c, text: c + "（" + pct(c, answered) + "）" };
+          }) }) + (it.type === "multi" ? '<p class="note">複選題，長條是選這項的人占作答人數的比例。</p>' : "");
       } else if (it.type === "matrix") {
+        h += chartBox("fb-" + n, { title: n + ". " + it.title.replace(/[：:]$/, "") + "：各項平均（滿分 " + it.options.length + "）", file: tt + "-第" + n + "題", max: it.options.length,
+          rows: it.rows.map(function (rw) {
+            var sc = fs.map(function (f) { return U.scoreOf(it.options, ansOf(f, rw.id)); }).filter(Boolean), a = avg(sc);
+            return { label: rw.label, value: a || 0, text: a == null ? "—" : a.toFixed(2) };
+          }) });
         h += '<div class="scroll"><table class="mtable"><thead><tr><th>項目</th><th class="num">平均</th><th class="num">滿意比例</th>' + it.options.map(function (o) { return '<th class="num">' + esc(o) + "</th>"; }).join("") + "</tr></thead><tbody>" +
           it.rows.map(function (r) {
             var sc = fs.map(function (f) { return U.scoreOf(it.options, ansOf(f, r.id)); }).filter(Boolean);
@@ -383,6 +450,15 @@
           }).join("") + '</tbody></table></div><p class="note">平均分數：「' + esc(it.options[0]) + "」" + it.options.length + " 分，「" + esc(it.options[it.options.length - 1]) + "」1 分。</p>";
       } else if (it.type === "slider") {
         var vals = fs.map(function (f) { var v = ansOf(f, it.id); return v === "" || v == null ? null : +v; }).filter(function (v) { return v != null && !isNaN(v); });
+        if (vals.length) {
+          var bins = 5, step = (it.max - it.min) / bins;
+          h += chartBox("fb-" + n, { title: n + ". " + it.title.replace(/[：:]$/, "") + "：分數分布（n=" + vals.length + "）", file: tt + "-第" + n + "題", max: vals.length,
+            rows: Array.apply(null, Array(bins)).map(function (_, b) {
+              var lo = it.min + step * b, hi = b === bins - 1 ? it.max : it.min + step * (b + 1);
+              var c = vals.filter(function (v) { return v >= lo && (b === bins - 1 ? v <= hi : v < hi); }).length;
+              return { label: Math.round(lo) + "–" + Math.round(hi) + " 分", value: c, text: c + " 人（" + pct(c, vals.length) + "）" };
+            }).reverse() });
+        }
         h += vals.length ? '<p style="margin:0">平均 <strong>' + Math.round(avg(vals) * 10) / 10 + "</strong>（" + it.min + "～" + it.max + "），中位數 " + round2(median(vals)) + "，最低 " + Math.min.apply(null, vals) + "，最高 " + Math.max.apply(null, vals) + "</p>" : '<p class="note">沒有資料</p>';
       } else if (it.type === "text") {
         var ts = fs.filter(function (f) { return String(ansOf(f, it.id) || "").trim(); });
@@ -540,7 +616,7 @@
     }
   });
   document.addEventListener("click", function (e) {
-    var t = e.target.closest("[data-close],[data-tab],[data-logout],[data-new],[data-edit],[data-del],[data-rm],[data-csv],[data-copy],[data-fbcsv],[data-fbxlsx],[data-fbxlsxall],[data-fbprint],[data-copylink],[data-actlink],[data-noimg],[data-mail],[data-tag],[data-savetpl],[data-deltpl],[data-survey],[data-qadd],[data-qmove],[data-qdel],[data-svsave],[data-svreset],[data-svapply],[data-svtpl],[data-svdeltpl]");
+    var t = e.target.closest("[data-close],[data-tab],[data-logout],[data-new],[data-edit],[data-del],[data-rm],[data-csv],[data-copy],[data-fbcsv],[data-fbxlsx],[data-fbxlsxall],[data-fbprint],[data-chartpng],[data-allcharts],[data-copylink],[data-actlink],[data-noimg],[data-mail],[data-tag],[data-savetpl],[data-deltpl],[data-survey],[data-qadd],[data-qmove],[data-qdel],[data-svsave],[data-svreset],[data-svapply],[data-svtpl],[data-svdeltpl]");
     if (!t) { if (e.target === $("dlg")) U.closeDlg(); return; }
     var d = t.dataset;
     if (d.close !== undefined) U.closeDlg();
@@ -583,6 +659,10 @@
       var sheets = [{ name: "總覽", rows: sum, cols: [36, 16, 8, 18, 8, 8, 8, 14, 12] }];
       acts.forEach(function (a) { if (fbFor(a.id).length) sheets.push({ name: U.dparts(a.date).md.replace("/", "-") + " " + (a.title || ""), rows: fbAnalysisRows(a.id).concat([[], ["原始回答"]], fbRowsOf(a.id)), cols: [10, 36, 28, 8, 8, 10] }); });
       saveXLSX(sheets, "全部活動回饋-" + new Date().toISOString().slice(0, 10));
+    } else if (d.chartpng !== undefined) {
+      chartPNG(d.chartpng);
+    } else if (d.allcharts !== undefined) {
+      allChartsPNG(d.allcharts);
     } else if (d.fbprint !== undefined) {
       window.print();
     } else if (d.survey !== undefined) {

@@ -251,3 +251,9 @@ a.btn{text-decoration:none}
   .panel,.sv-block{break-inside:avoid;box-shadow:none}
   .scroll{overflow:visible}
 }
+/* 回饋分析圖表 */
+.chart{margin:4px 0 8px;display:flex;flex-direction:column;gap:6px}
+.chart-svg{overflow-x:auto}
+.chart-svg svg{display:block;width:100%;max-width:640px;min-width:420px;height:auto}
+.chart figcaption{display:flex;justify-content:flex-end;max-width:640px}
+.chart svg g:hover text{fill:var(--ink)}
