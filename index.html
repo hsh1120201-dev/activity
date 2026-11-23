@@ -17,12 +17,12 @@
 
   <main>
     <div class="hero">
-      <h1 class="hero-title"><span>新竹社會創新基地</span><span><em>活動報名</em>平台</span></h1>
+      <h1>新竹社會創新基地<br><em>活動報名</em>平台</h1>
       <p>講座、工作坊與交流活動，都在這裡報名與填寫回饋。</p>
     </div>
 
     <section aria-labelledby="h-list">
-      <div class="sec-head"><h2 id="h-list">近期活動</h2><small>按「我要報名」或「填寫回饋」即可開始</small></div>
+      <div class="sec-head"><h2 id="h-list">近期活動</h2><small>點選活動即可查看與報名</small></div>
       <div class="filters">
         <label for="f-sem">類別<select id="f-sem"><option value="">全部類別</option></select></label>
         <label for="f-status">狀態<select id="f-status">
@@ -53,28 +53,14 @@
     var d = U.dparts(a.date);
     var meta = [a.semester, a.time, a.location].filter(Boolean).map(esc).join(" · ");
     var chip = a.status === "open" && isFull(a) ? "額滿" : "";
-    return '<div class="act act-card">' +
+    return '<button class="act" type="button" data-act="' + esc(a.id) + '">' +
       '<span class="date"><b>' + esc(d.md) + "</b><i>" + esc(d.wd) + "</i></span>" +
       '<span class="body"><span class="t">' + esc(a.title || "未命名活動") + "</span>" +
       (meta ? '<span class="m">' + meta + "</span>" : "") +
       '<span class="tags"><span class="pill ' + esc(a.status) + '">' + esc(U.STATUS[a.status] || "") + "</span>" +
-      actBtns(a) +
       (chip ? '<span class="chip">' + chip + "</span>" : "") +
       '<span class="cnt">' + esc(U.capText(a, S.counts)) + "</span></span></span>" +
-      (a.image ? '<span class="thumb"><img src="' + esc(a.image) + '" alt="" loading="lazy" onerror="this.parentNode.remove()"></span>' : "") + "</div>";
-  }
-
-  /* 報名、回饋兩顆獨立按鈕：一直顯示，沒開放的那顆反灰不能按 */
-  function actBtns(a, view) {
-    var regOn = a.status === "open", fbOn = a.status === "feedback";
-    function b(kind, on, label, offLabel) {
-      return '<button class="btn sm' + (view && view !== kind ? " ghost" : "") + '" type="button" data-view="' + kind + '" data-id="' + esc(a.id) + '"' +
-        (on ? "" : " disabled") + (view ? ' aria-pressed="' + (view === kind) + '"' : "") + ">" + (on ? label : offLabel) + "</button>";
-    }
-    var tag = view === undefined ? "span" : "div";
-    return "<" + tag + ' class="act-btns' + (view === undefined ? " inline" : "") + '" role="group" aria-label="報名或填寫回饋">' +
-      b("reg", regOn, "我要報名", a.status === "closed" || fbOn ? "報名已截止" : "尚未開放報名") +
-      b("fb", fbOn, "填寫回饋", a.status === "closed" ? "回饋已關閉" : "回饋尚未開放") + "</" + tag + ">";
+      (a.image ? '<span class="thumb"><img src="' + esc(a.image) + '" alt="" loading="lazy" onerror="this.parentNode.remove()"></span>' : "") + "</button>";
   }
 
   function render() {
@@ -102,10 +88,8 @@
   }
   function remember(sid) { S.sid = sid; try { localStorage.setItem("must-sid", sid); } catch (e) {} }
 
-  /* 報名與回饋是兩個獨立按鈕：view 為 "reg"（報名）或 "fb"（回饋），沒指定時依活動狀態決定先顯示哪一個 */
-  function openAct(id, view) {
+  function openAct(id) {
     var a = actById(id); if (!a) { U.closeDlg(); return; }
-    if (view !== "reg" && view !== "fb") view = a.status === "feedback" ? "fb" : a.status === "open" ? "reg" : "";
     var d = U.dparts(a.date);
     var h = U.head(a.title || "未命名活動") +
       (a.image ? '<a class="poster" href="' + esc(a.image) + '" target="_blank" rel="noopener"><img src="' + esc(a.image) + '" alt="' + esc(a.title || "活動圖片") + '" onerror="this.parentNode.remove()"></a>' : "") +
@@ -114,84 +98,82 @@
       (a.time ? "<dt>時間</dt><dd>" + esc(a.time) + "</dd>" : "") +
       (a.location ? "<dt>地點</dt><dd>" + esc(a.location) + "</dd>" : "") +
       (a.semester ? "<dt>類別</dt><dd>" + esc(a.semester) + "</dd>" : "") + "</dl>" +
-      (a.description ? '<p class="desc">' + esc(a.description) + "</p>" : "") +
-      actBtns(a, view) + "<hr>";
+      (a.description ? '<p class="desc">' + esc(a.description) + "</p>" : "") + "<hr>";
 
-    if (view === "reg") h += regSection(a);
-    else if (view === "fb") h += fbSection(a);
-    else h += '<p class="note">這個活動已結束。</p>';
-    U.showDlg(h);
-  }
-
-  function regSection(a) {
-    var id = a.id;
     var cancelBox = '<details><summary>已經報名，想取消？</summary><form id="cancel-form" data-id="' + esc(id) + '" style="margin-top:12px">' +
       '<div class="grid2">' + U.fld("c-sid", "報名時填寫的電話號碼", S.sid, true, "tel", ' maxlength="20" autocomplete="tel"') + U.fld("c-name", "報名時填寫的姓名", "", true, "text", ' maxlength="40"') + "</div>" +
       '<button class="btn danger" type="submit">取消報名</button></form></details>';
-    if (a.status !== "open") return '<p class="note">這個活動目前沒有開放報名。</p>';
-    var h = "";
-    if (isFull(a)) h += '<div class="warn">這個活動已額滿。有人取消時，名額會重新開放。</div>';
-    else h += '<form id="reg-form" class="survey" data-id="' + esc(id) + '" novalidate>' +
-      U.fld("r-name", "您的姓名：", "", true, "text", ' maxlength="40" autocomplete="name"') +
-      U.fld("r-sid", "您的電話號碼（僅做為聯繫用途）：", S.sid, true, "tel", ' maxlength="20" autocomplete="tel"') +
-      U.fld("r-contact", "您的 Gmail（僅做為聯繫用途）：", "", true, "email", ' maxlength="80" autocomplete="email" placeholder="example@gmail.com"') +
-      '<fieldset class="mrow" data-row="r-gender"><legend class="f"><span>性別： <i>*</i></span></legend><div class="choices">' + ["男性", "女性", "其他"].map(function (o) { return opt("r-gender", o); }).join("") + "</div></fieldset>" +
-      '<fieldset class="mrow" data-row="r-age"><legend class="f"><span>您的年齡區間： <i>*</i></span></legend><div class="choices free">' + ["18歲以下", "18-25歲", "25-35歲", "35-45歲", "45-55歲", "55歲以上"].map(function (o) { return opt("r-age", o); }).join("") + "</div></fieldset>" +
-      '<div class="f"><span>你要報名的課程：</span><div class="fixed">' + esc(a.title || "未命名活動") + "</div></div>" +
-      '<label class="f" for="r-note"><span>有什麼想對我們說：</span><textarea id="r-note" maxlength="500"></textarea></label>' +
-      '<button class="btn" type="submit">送出報名</button>' +
-      '<p class="note">電話與 Gmail 僅做為聯繫用途。</p></form>';
-    return h + "<hr>" + cancelBox;
-  }
-
-  function fbSection(a) {
-    if (a.status === "feedback") return fbDone(a.id) ? '<div class="ok">感謝您填寫課程滿意度調查！</div>' : surveyForm(a.id);
-    if (a.status === "open") return '<p class="note">回饋問卷會在活動結束後開放填寫，到時再回來這裡填寫即可。</p>';
-    return '<p class="note">這個活動的回饋問卷已關閉。</p>';
+    if (a.status === "open") {
+      if (isFull(a)) h += '<div class="warn">這個活動已額滿。有人取消時，名額會重新開放。</div>';
+      else h += '<form id="reg-form" class="survey" data-id="' + esc(id) + '" novalidate>' +
+        U.fld("r-name", "您的姓名：", "", true, "text", ' maxlength="40" autocomplete="name"') +
+        U.fld("r-sid", "您的電話號碼（僅做為聯繫用途）：", S.sid, true, "tel", ' maxlength="20" autocomplete="tel"') +
+        U.fld("r-contact", "您的 Gmail（僅做為聯繫用途）：", "", true, "email", ' maxlength="80" autocomplete="email" placeholder="example@gmail.com"') +
+        '<fieldset class="mrow" data-row="r-gender"><legend class="f"><span>性別： <i>*</i></span></legend><div class="choices">' + ["男性", "女性", "其他"].map(function (o) { return opt("r-gender", o); }).join("") + "</div></fieldset>" +
+        '<fieldset class="mrow" data-row="r-age"><legend class="f"><span>您的年齡區間： <i>*</i></span></legend><div class="choices free">' + ["18歲以下", "18-25歲", "25-35歲", "35-45歲", "45-55歲", "55歲以上"].map(function (o) { return opt("r-age", o); }).join("") + "</div></fieldset>" +
+        '<div class="f"><span>你要報名的課程：</span><div class="fixed">' + esc(a.title || "未命名活動") + "</div></div>" +
+        '<label class="f" for="r-note"><span>有什麼想對我們說：</span><textarea id="r-note" maxlength="500"></textarea></label>' +
+        '<button class="btn" type="submit">送出報名</button>' +
+        '<p class="note">電話與 Gmail 僅做為聯繫用途。</p></form>';
+      h += "<hr>" + cancelBox;
+    } else if (a.status === "feedback") {
+      h += fbDone(id) ? '<div class="ok">感謝您填寫回饋問卷！</div>' : surveyForm(id);
+    } else {
+      h += '<p class="note">這個活動已結束。</p>';
+    }
+    U.showDlg(h);
   }
 
   function fbDone(id) { try { return localStorage.getItem("hub-fb-" + id) === "1"; } catch (e) { return false; } }
-  function opt(name, v) {
-    return '<label class="opt"><input type="radio" name="' + esc(name) + '" value="' + esc(v) + '"><span>' + esc(v) + "</span></label>";
+  function opt(name, v, type) {
+    return '<label class="opt"><input type="' + (type || "radio") + '" name="' + esc(name) + '" value="' + esc(v) + '"><span>' + esc(v) + "</span></label>";
   }
   function surveyForm(id) {
-    var n = 0, sv = U.SURVEY;
+    var n = 0, sv = U.surveyOf(actById(id));
     var h = '<form id="fb-form" class="survey" data-id="' + esc(id) + '" novalidate>' +
-      '<h4 style="margin:0;font-size:1.125rem">' + esc(sv.title) + "</h4>" +
-      '<div class="sv-intro"><p>' + esc(sv.intro) + '</p><p class="note">' + esc(sv.contact).replace(/\n/g, "<br>") + "</p></div>";
+      '<h4 style="margin:0;font-size:18px">' + esc(sv.title) + "</h4>" +
+      (sv.intro ? '<div class="sv-intro"><p style="white-space:pre-line">' + esc(sv.intro) + "</p></div>" : "");
     sv.items.forEach(function (it) {
       if (it.type === "note") { h += '<div class="sv-note">' + esc(it.text) + "</div>"; return; }
       n++;
-      var key = it.key || "m" + n;
-      h += '<fieldset class="sv-q" data-q="' + esc(key) + '"><legend class="sv-t"><b>' + n + "</b><span>" + esc(it.title) + (it.required ? " <i>*</i>" : "") + "</span></legend>";
-      if (it.type === "single") h += '<div class="choices">' + it.options.map(function (o) { return opt(it.key, o); }).join("") + "</div>";
+      h += '<fieldset class="sv-q" data-q="' + esc(it.id) + '"><legend class="sv-t"><b>' + n + "</b><span>" + esc(it.title) + (it.required ? " <i>*</i>" : "") + "</span></legend>";
+      if (it.type === "single") h += '<div class="choices">' + it.options.map(function (o) { return opt(it.id, o); }).join("") + "</div>";
+      else if (it.type === "multi") h += '<p class="note" style="margin:0">可複選，請選 ' + (it.minSel === it.maxSel ? it.minSel : it.minSel + "～" + it.maxSel) + " 項</p>" +
+        '<div class="choices">' + it.options.map(function (o) { return opt(it.id, o, "checkbox"); }).join("") + "</div>";
       else if (it.type === "matrix") h += it.rows.map(function (r) {
-        return '<fieldset class="mrow" data-row="' + esc(r.key) + '"><legend>' + esc(r.label) + '</legend><div class="choices">' + U.SCALE.map(function (o) { return opt(r.key, o); }).join("") + "</div></fieldset>";
+        return '<fieldset class="mrow" data-row="' + esc(r.id) + '"><legend>' + esc(r.label) + '</legend><div class="choices" style="grid-template-columns:repeat(' + it.options.length + ',minmax(0,1fr))">' +
+          it.options.map(function (o) { return opt(r.id, o); }).join("") + "</div></fieldset>";
       }).join("");
-      else if (it.type === "text") h += '<textarea name="' + esc(it.key) + '" maxlength="1000" placeholder="請填入文字" aria-label="' + esc(it.title) + '"></textarea>';
-      else if (it.type === "slider") h += '<div class="slider untouched"><input type="range" name="' + esc(it.key) + '" min="' + it.min + '" max="' + it.max + '" step="1" value="' + Math.round((it.min + it.max) / 2) + '" aria-label="' + esc(it.title) + '"><output>請拖曳選擇</output></div>' +
+      else if (it.type === "text") h += '<textarea name="' + esc(it.id) + '" maxlength="1000" placeholder="請填入文字" aria-label="' + esc(it.title) + '"></textarea>';
+      else if (it.type === "slider") h += '<div class="slider untouched"><input type="range" name="' + esc(it.id) + '" min="' + it.min + '" max="' + it.max + '" step="1" value="' + Math.round((it.min + it.max) / 2) + '" aria-label="' + esc(it.title) + '"><output>請拖曳選擇</output></div>' +
         '<div class="ends"><span>' + it.min + "</span><span>" + it.max + "</span></div>";
       h += "</fieldset>";
     });
     return h + '<button class="btn" type="submit">送出</button><p class="note">本問卷採不記名方式。</p></form>';
   }
   function collect(form) {
-    var ans = {}, miss = null;
+    var ans = {}, miss = null, sv = U.surveyOf(actById(form.dataset.id));
     form.querySelectorAll(".miss").forEach(function (el) { el.classList.remove("miss"); });
-    U.surveyFields().forEach(function (f) {
-      var v = "";
+    U.surveyFields(sv).forEach(function (f) {
+      var v = "", why = "";
       if (f.type === "scale" || f.type === "single") { var c = form.querySelector('input[name="' + f.key + '"]:checked'); v = c ? c.value : ""; }
+      else if (f.type === "multi") {
+        v = [].map.call(form.querySelectorAll('input[name="' + f.key + '"]:checked'), function (x) { return x.value; });
+        if (v.length && (v.length < f.minSel || v.length > f.maxSel)) why = "請選擇 " + (f.minSel === f.maxSel ? f.minSel : f.minSel + "～" + f.maxSel) + " 個選項";
+      }
       else if (f.type === "text") v = form.querySelector('[name="' + f.key + '"]').value.trim();
       else if (f.type === "slider") { var r = form.querySelector('[name="' + f.key + '"]'); v = r.closest(".slider").classList.contains("untouched") ? "" : r.value; }
       ans[f.key] = v;
-      if (f.required && v === "") {
+      if (!why && f.required && (v === "" || (Array.isArray(v) && !v.length))) why = "請填寫";
+      if (why) {
         var el = form.querySelector('[data-row="' + f.key + '"]') || form.querySelector('[data-q="' + f.key + '"]');
         if (el) { el.classList.add("miss"); var q = el.closest(".sv-q"); if (q) q.classList.add("miss"); }
-        if (!miss) miss = { f: f, el: el };
+        if (!miss) miss = { f: f, el: el, why: why };
       }
     });
     if (miss) {
-      U.toast("請填寫「" + (miss.f.group ? miss.f.group + "－" : "") + miss.f.head + "」");
+      var label = "「" + (miss.f.group ? miss.f.group + "－" : "") + miss.f.head + "」";
+      U.toast(miss.why === "請填寫" ? "請填寫" + label : label + miss.why);
       if (miss.el) miss.el.scrollIntoView({ block: "center", behavior: "smooth" });
       return null;
     }
@@ -240,17 +222,16 @@
     }
   });
   document.addEventListener("click", function (e) {
-    var t = e.target.closest("[data-act],[data-view],[data-close],[data-reload]");
+    var t = e.target.closest("[data-act],[data-close],[data-reload]");
     if (!t) { if (e.target === $("dlg")) U.closeDlg(); return; }
     if (t.dataset.act !== undefined) openAct(t.dataset.act);
-    else if (t.dataset.view !== undefined) openAct(t.dataset.id, t.dataset.view);
     else if (t.dataset.close !== undefined) U.closeDlg();
     else { S.error = ""; render(); load(); }
   });
   document.addEventListener("change", function (e) {
     if (e.target.id === "f-sem" || e.target.id === "f-status") render();
     var q = e.target.closest && e.target.closest(".miss");
-    if (q && e.target.type === "radio") { var row = e.target.closest(".mrow"); if (row) row.classList.remove("miss"); var sq = e.target.closest(".sv-q"); if (sq && !sq.querySelector(".mrow.miss")) sq.classList.remove("miss"); }
+    if (q && (e.target.type === "radio" || e.target.type === "checkbox")) { var row = e.target.closest(".mrow"); if (row) row.classList.remove("miss"); var sq = e.target.closest(".sv-q"); if (sq && !sq.querySelector(".mrow.miss")) sq.classList.remove("miss"); }
   });
   document.addEventListener("input", function (e) {
     if (e.target.type !== "range") return;
@@ -259,10 +240,10 @@
     box.querySelector("output").textContent = e.target.value + " 分";
     var sq = e.target.closest(".sv-q"); if (sq) sq.classList.remove("miss");
   });
-  /* 直連：網址加上 #fb-活動編號 直接打開回饋問卷，#reg-活動編號 直接打開報名表，可做成 QR Code 放在現場 */
+  /* 回饋問卷直連：網址加上 #fb-活動編號 會直接打開該活動的問卷，可做成 QR Code 放在現場 */
   function openFromHash() {
-    var m = /^#(fb|reg)-([A-Za-z0-9]+)$/.exec(location.hash || "");
-    if (m && actById(m[2])) openAct(m[2], m[1]);
+    var m = /^#fb-([A-Za-z0-9]+)$/.exec(location.hash || "");
+    if (m && actById(m[1])) openAct(m[1]);
   }
   window.addEventListener("hashchange", openFromHash);
 

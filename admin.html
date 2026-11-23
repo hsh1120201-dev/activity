@@ -110,47 +110,138 @@
         btn.disabled = false; btn.dataset.sure = ""; btn.textContent = "寄出 " + to.length + " 封信";
       }).then(function () { S.busy = false; });
   }
+  /* ---------- 回饋問卷編輯器 ---------- */
+  var QT = { single: "單選題", multi: "複選題", matrix: "評分表（多個項目用同一組選項評分）", text: "文字填答", slider: "拉桿（數字範圍）", note: "說明文字（不是題目）" };
+  var SCALE5 = ["非常滿意", "滿意", "普通", "不滿意", "非常不滿意"];
+  function rid(p) { return p + Math.random().toString(36).slice(2, 8); }
+  function newItem(type) {
+    var it = { id: rid(type === "note" ? "n" : "q"), type: type, title: "", required: type !== "text" && type !== "note" };
+    if (type === "single" || type === "multi") it.options = ["選項 1", "選項 2"];
+    if (type === "multi") { it.minSel = 1; it.maxSel = 2; }
+    if (type === "matrix") { it.options = SCALE5.slice(); it.rows = [{ id: rid("r"), label: "項目 1" }]; }
+    if (type === "slider") { it.min = 0; it.max = 100; }
+    if (type === "note") it.text = "";
+    return it;
+  }
+  function lines(v) { return String(v || "").split("\n").map(function (x) { return x.trim(); }).filter(Boolean); }
+  function openSurvey(id) {
+    var a = actById(id); if (!a) return;
+    S.ed = { act: id, sv: JSON.parse(JSON.stringify(U.surveyOf(a))) };
+    renderSurvey();
+  }
+  /* 把畫面上的輸入值寫回 S.ed.sv（只在需要時呼叫，避免打字時重畫） */
+  function edSync() {
+    var form = $("sv-form"); if (!form || !S.ed) return;
+    var sv = S.ed.sv;
+    sv.title = $("sv-title").value.trim(); sv.intro = $("sv-intro").value;
+    form.querySelectorAll("[data-i]").forEach(function (card) {
+      var it = sv.items[+card.dataset.i]; if (!it) return;
+      var get = function (k) { var el = card.querySelector('[data-qf="' + k + '"]'); return el ? (el.type === "checkbox" ? el.checked : el.value) : undefined; };
+      if (it.type === "note") { it.text = get("text"); return; }
+      it.title = get("title").trim(); it.required = get("required");
+      if (it.type === "single" || it.type === "multi" || it.type === "matrix") it.options = lines(get("options"));
+      if (it.type === "multi") { it.minSel = parseInt(get("minSel"), 10) || 1; it.maxSel = parseInt(get("maxSel"), 10) || it.options.length; }
+      if (it.type === "matrix") it.rows = lines(get("rows")).map(function (label, k) { return { id: (it.rows[k] && it.rows[k].id) || rid("r"), label: label }; });
+      if (it.type === "slider") { it.min = parseInt(get("min"), 10) || 0; it.max = parseInt(get("max"), 10); }
+    });
+  }
+  function renderSurvey(focusIdx) {
+    var a = actById(S.ed.act), sv = S.ed.sv, nfb = fbFor(S.ed.act).length, n = 0;
+    var tf = function (k, label, val, extra) { return '<label class="f"><span>' + label + '</span><input type="text" data-qf="' + k + '" value="' + esc(val == null ? "" : val) + '"' + (extra || "") + "></label>"; };
+    var ta = function (k, label, val, rows) { return '<label class="f"><span>' + label + '</span><textarea data-qf="' + k + '" rows="' + (rows || 4) + '">' + esc(val) + "</textarea></label>"; };
+    var num = function (k, label, val) { return '<label class="f"><span>' + label + '</span><input type="number" data-qf="' + k + '" value="' + esc(val) + '"></label>'; };
+    var h = U.head("回饋問卷：" + (a.title || "")) + '<form id="sv-form" class="survey" novalidate>' +
+      (nfb ? '<div class="warn">這個活動已經收到 ' + nfb + " 份回饋。修改後舊的回答都會保留，但刪除或改過的題目，舊回答可能對不上。</div>" : "") +
+      '<div class="f"><span>套用問卷範本（會取代下面全部題目）</span><div class="row"><select id="sv-tpl" style="flex:1 1 200px"><option value="">選擇範本…</option><option value="__default">預設：課程滿意度調查</option>' +
+      S.surveyTpls.map(function (x) { return '<option value="' + esc(x.id) + '">' + esc(x.name) + "</option>"; }).join("") +
+      '</select><button class="btn ghost sm" type="button" data-svapply>套用</button><button class="btn danger sm" type="button" data-svdeltpl>刪除範本</button></div></div>' +
+      '<label class="f" for="sv-title"><span>問卷標題</span><input type="text" id="sv-title" maxlength="100" value="' + esc(sv.title) + '"></label>' +
+      '<label class="f" for="sv-intro"><span>問卷說明（顯示在題目上方）</span><textarea id="sv-intro" rows="3" maxlength="2000">' + esc(sv.intro || "") + "</textarea></label>";
+    sv.items.forEach(function (it, i) {
+      var label = it.type === "note" ? "說明文字" : "第 " + (++n) + " 題";
+      h += '<div class="qcard" data-i="' + i + '"><div class="qhead"><b>' + label + "</b><span class=\"cnt\">" + QT[it.type] + "</span>" +
+        '<span class="qtools"><button class="btn ghost sm" type="button" data-qmove="-1" aria-label="上移"' + (i ? "" : " disabled") + ">↑</button>" +
+        '<button class="btn ghost sm" type="button" data-qmove="1" aria-label="下移"' + (i < sv.items.length - 1 ? "" : " disabled") + ">↓</button>" +
+        '<button class="btn danger sm" type="button" data-qdel>刪除</button></span></div>';
+      if (it.type === "note") h += ta("text", "說明內容", it.text, 3);
+      else {
+        h += tf("title", "題目", it.title, ' maxlength="200"') +
+          '<label class="chk"><input type="checkbox" data-qf="required"' + (it.required ? " checked" : "") + "> 必填</label>";
+        if (it.type === "single" || it.type === "multi") h += ta("options", "選項（一行一個）", (it.options || []).join("\n"), Math.min(10, (it.options || []).length + 1));
+        if (it.type === "multi") h += '<div class="grid2">' + num("minSel", "最少選幾項", it.minSel) + num("maxSel", "最多選幾項", it.maxSel) + "</div>";
+        if (it.type === "matrix") h += ta("rows", "評分項目（一行一個）", (it.rows || []).map(function (r) { return r.label; }).join("\n"), Math.min(8, (it.rows || []).length + 1)) +
+          ta("options", "評分選項（一行一個，第一個分數最高）", (it.options || []).join("\n"), Math.min(8, (it.options || []).length + 1));
+        if (it.type === "slider") h += '<div class="grid2">' + num("min", "最小值", it.min) + num("max", "最大值", it.max) + "</div>";
+      }
+      h += "</div>";
+    });
+    h += '<div class="f"><span>新增題目</span><div class="row">' + Object.keys(QT).map(function (k) { return '<button class="btn ghost sm" type="button" data-qadd="' + k + '">＋ ' + QT[k].replace(/（.*）/, "") + "</button>"; }).join("") + "</div></div>" +
+      '<div class="row"><input type="text" id="sv-tplname" maxlength="40" placeholder="範本名稱，例如：工作坊回饋" aria-label="範本名稱" style="flex:1 1 200px"><button class="btn ghost sm" type="button" data-svtpl>另存為問卷範本</button></div>' +
+      '<div class="row"><button class="btn" type="button" data-svsave>儲存到這個活動</button><button class="btn ghost" type="button" data-close>取消</button>' +
+      (a.customSurvey ? '<button class="btn danger sm" type="button" data-svreset style="margin-left:auto">恢復預設問卷</button>' : "") + "</div></form>";
+    U.showDlg(h);
+    if (focusIdx != null) { var c = document.querySelector('[data-i="' + focusIdx + '"]'); if (c) { c.scrollIntoView({ block: "center" }); var inp = c.querySelector("input,textarea"); if (inp) inp.focus(); } }
+  }
+  function svCall(p, okMsg, reopen) {
+    if (S.busy) return;
+    S.busy = true;
+    var keep = S.ed;
+    p.then(function () {
+      U.toast(okMsg);
+      return load().then(function () { if (reopen && keep) { S.ed = keep; renderSurvey(); } else U.closeDlg(); });
+    }).catch(function (e) { if (e.code !== "auth") U.toast(e.message); })
+      .then(function () { S.busy = false; });
+  }
+  document.addEventListener("change", function (e) {
+    if (!S.ed || !e.target.closest || !e.target.closest("#sv-form")) return;
+    if (e.target.dataset.qf === "required") edSync();
+  });
+
   function fbLink(id) { return new URL("./", location.href).href + "#fb-" + id; }
   function avg(list) { return list.length ? list.reduce(function (a, b) { return a + b; }, 0) / list.length : null; }
   function bar(p) { return '<span class="bar"><i style="width:' + Math.round(p * 100) + '%"></i></span>'; }
 
+  function ansOf(f, key) { return (f.answers || {})[key]; }
   function fbReport(id) {
-    var fs = fbFor(id), act = actById(id), fields = U.surveyFields();
-    var h = '<div class="panel sv-block" style="margin-bottom:14px"><h4>回饋問卷連結</h4>' +
-      '<p class="note">' + (act.status === "feedback" ? "目前開放填寫。可把連結貼到 LINE 群組，或做成 QR Code 放在課程現場。" : "活動狀態改為「回饋中」後，這個連結才能填寫。") + "</p>" +
-      '<div class="linkbox"><code>' + esc(fbLink(id)) + '</code><button class="btn ghost sm" type="button" data-copylink>複製連結</button></div></div>';
+    var fs = fbFor(id), act = actById(id), sv = U.surveyOf(act), fields = U.surveyFields(sv);
+    var h = '<div class="panel sv-block" style="margin-bottom:14px"><h4>回饋問卷：' + esc(sv.title) + "</h4>" +
+      '<p class="note">' + (act.customSurvey ? "這個活動使用自己設定的問卷。" : "這個活動使用預設的「課程滿意度調查」。") +
+      (act.status === "feedback" ? "目前開放填寫，可以把連結貼到 LINE 群組，或做成 QR Code 放在現場。" : "活動狀態改為「回饋中」後，這個連結才能填寫。") + "</p>" +
+      '<div class="linkbox"><code>' + esc(fbLink(id)) + '</code><button class="btn ghost sm" type="button" data-copylink>複製連結</button>' +
+      '<button class="btn sm" type="button" data-survey="' + esc(id) + '">編輯回饋問卷</button></div></div>';
     if (!fs.length) return h + '<div class="panel"><p class="note">這個活動還沒有收到回饋。</p></div>';
 
-    var allScores = [];
-    fs.forEach(function (f) { fields.forEach(function (x) { if (x.type === "scale") { var s = U.scoreOf(f[x.key]); if (s) allScores.push(s); } }); });
-    var again = fs.map(function (f) { return f.again === "" || f.again == null ? null : +f.again; }).filter(function (v) { return v != null && !isNaN(v); });
+    var scales = fields.filter(function (x) { return x.type === "scale"; }), all = [], ns = {};
+    scales.forEach(function (x) { ns[x.options.length] = 1; fs.forEach(function (f) { var sc = U.scoreOf(x.options, ansOf(f, x.key)); if (sc) all.push(sc); }); });
+    var nsKeys = Object.keys(ns);
     h += '<div class="panel stat"><div><b>' + fs.length + '</b> 份<br><span class="cnt">回饋（報名 ' + regsFor(id).length + " 人）</span></div>" +
-      "<div><b>" + (allScores.length ? avg(allScores).toFixed(2) : "—") + '</b> / 5<br><span class="cnt">整體平均滿意度</span></div>' +
-      "<div><b>" + (again.length ? Math.round(avg(again)) : "—") + '</b> / 100<br><span class="cnt">再次參加意願平均</span></div>' +
+      (scales.length && nsKeys.length === 1 ? "<div><b>" + (all.length ? avg(all).toFixed(2) : "—") + "</b> / " + nsKeys[0] + '<br><span class="cnt">評分題平均</span></div>' : "") +
       '<div style="margin-left:auto"><button class="btn ghost sm" type="button" data-fbcsv>下載回饋 CSV</button></div></div>';
 
     var n = 0;
-    U.SURVEY.items.forEach(function (it) {
+    sv.items.forEach(function (it) {
       if (it.type === "note") return;
       n++;
       h += '<div class="panel sv-block" style="margin-top:12px"><h4>' + n + ". " + esc(it.title.replace(/[：:]$/, "")) + "</h4>";
-      if (it.type === "single") {
+      if (it.type === "single" || it.type === "multi") {
+        var answered = fs.filter(function (f) { var v = ansOf(f, it.id); return Array.isArray(v) ? v.length : v; }).length || 1;
         h += '<div class="bars">' + it.options.map(function (o) {
-          var c = fs.filter(function (f) { return f[it.key] === o; }).length;
-          return "<span>" + esc(o) + "</span>" + bar(c / fs.length) + "<span>" + c + "</span>";
-        }).join("") + "</div>";
+          var c = fs.filter(function (f) { var v = ansOf(f, it.id); return Array.isArray(v) ? v.indexOf(o) >= 0 : v === o; }).length;
+          return "<span>" + esc(o) + "</span>" + bar(c / answered) + "<span>" + c + "</span>";
+        }).join("") + "</div>" + (it.type === "multi" ? '<p class="note">複選題，長條是選這項的人占作答人數的比例。</p>' : "");
       } else if (it.type === "matrix") {
-        h += '<div class="scroll"><table class="mtable"><thead><tr><th>項目</th><th class="num">平均</th>' + U.SCALE.map(function (o) { return '<th class="num">' + o + "</th>"; }).join("") + "</tr></thead><tbody>" +
+        h += '<div class="scroll"><table class="mtable"><thead><tr><th>項目</th><th class="num">平均</th>' + it.options.map(function (o) { return '<th class="num">' + esc(o) + "</th>"; }).join("") + "</tr></thead><tbody>" +
           it.rows.map(function (r) {
-            var sc = fs.map(function (f) { return U.scoreOf(f[r.key]); }).filter(Boolean);
+            var sc = fs.map(function (f) { return U.scoreOf(it.options, ansOf(f, r.id)); }).filter(Boolean);
             return "<tr><td>" + esc(r.label) + '</td><td class="num"><strong>' + (sc.length ? avg(sc).toFixed(2) : "—") + "</strong></td>" +
-              U.SCALE.map(function (o) { return '<td class="num">' + fs.filter(function (f) { return f[r.key] === o; }).length + "</td>"; }).join("") + "</tr>";
-          }).join("") + "</tbody></table></div><p class=\"note\">平均分數：非常滿意 5 分，非常不滿意 1 分。</p>";
+              it.options.map(function (o) { return '<td class="num">' + fs.filter(function (f) { return ansOf(f, r.id) === o; }).length + "</td>"; }).join("") + "</tr>";
+          }).join("") + '</tbody></table></div><p class="note">平均分數：「' + esc(it.options[0]) + "」" + it.options.length + " 分，「" + esc(it.options[it.options.length - 1]) + "」1 分。</p>";
       } else if (it.type === "slider") {
-        h += again.length ? '<p style="margin:0">平均 <strong>' + Math.round(avg(again)) + "</strong> 分，最低 " + Math.min.apply(null, again) + " 分，最高 " + Math.max.apply(null, again) + " 分</p>" : '<p class="note">沒有資料</p>';
+        var vals = fs.map(function (f) { var v = ansOf(f, it.id); return v === "" || v == null ? null : +v; }).filter(function (v) { return v != null && !isNaN(v); });
+        h += vals.length ? '<p style="margin:0">平均 <strong>' + Math.round(avg(vals) * 10) / 10 + "</strong>（" + it.min + "～" + it.max + "），最低 " + Math.min.apply(null, vals) + "，最高 " + Math.max.apply(null, vals) + "</p>" : '<p class="note">沒有資料</p>';
       } else if (it.type === "text") {
-        var ts = fs.filter(function (f) { return (f[it.key] || "").trim(); });
-        h += ts.length ? '<div class="list">' + ts.map(function (f) { return '<div class="fbitem"><span class="cnt">' + esc(U.ftime(f.createdAt)) + "</span><p>" + esc(f[it.key]) + "</p></div>"; }).join("") + "</div>" : '<p class="note">沒有人填寫</p>';
+        var ts = fs.filter(function (f) { return String(ansOf(f, it.id) || "").trim(); });
+        h += ts.length ? '<div class="list">' + ts.map(function (f) { return '<div class="fbitem"><span class="cnt">' + esc(U.ftime(f.createdAt)) + "</span><p>" + esc(ansOf(f, it.id)) + "</p></div>"; }).join("") + "</div>" : '<p class="note">沒有人填寫</p>';
       }
       h += "</div>";
     });
@@ -171,7 +262,7 @@
   function load() {
     return call("adminData").then(function (j) {
       S.acts = j.activities || []; S.regs = j.registrations || []; S.fbs = j.feedback || [];
-      S.mails = j.mails || []; S.templates = j.templates || []; S.quota = j.mailQuota == null ? null : j.mailQuota; S.sender = j.sender || "";
+      S.mails = j.mails || []; S.templates = j.templates || []; S.surveyTpls = j.surveyTemplates || []; S.quota = j.mailQuota == null ? null : j.mailQuota; S.sender = j.sender || "";
       S.counts = {}; S.regs.forEach(function (r) { S.counts[r.activityId] = (S.counts[r.activityId] || 0) + 1; });
       S.loaded = true; render();
     });
@@ -210,7 +301,7 @@
       h += acts.length ? acts.map(function (a) {
         return '<div class="arow">' + (a.image ? '<img class="athumb" src="' + esc(a.image) + '" alt="" loading="lazy">' : '<span class="athumb empty">無圖片</span>') + '<div class="info"><strong>' + esc(a.title || "未命名活動") + "</strong>" +
           '<span class="tags"><span class="pill ' + esc(a.status) + '">' + esc(U.STATUS[a.status] || "") + '</span><span class="cnt">' + esc(U.dparts(a.date).full) + " · " + esc(U.capText(a, S.counts)) + "</span></span></div>" +
-          '<div class="row"><button class="btn ghost sm" type="button" data-edit="' + esc(a.id) + '">編輯</button><button class="btn danger sm" type="button" data-del="' + esc(a.id) + '">刪除</button></div></div>';
+          '<div class="row"><button class="btn ghost sm" type="button" data-edit="' + esc(a.id) + '">編輯</button><button class="btn ghost sm" type="button" data-survey="' + esc(a.id) + '">回饋問卷</button><button class="btn danger sm" type="button" data-del="' + esc(a.id) + '">刪除</button></div></div>';
       }).join("") : '<div class="panel"><p class="note">還沒有活動。按「新增活動」建立第一個。</p></div>';
       h += "</div>";
     } else if (!S.acts.length) {
@@ -259,9 +350,11 @@
     return rows;
   }
   function fbRowsOf(id) {
-    var fields = U.surveyFields();
+    var fields = U.surveyFields(U.surveyOf(actById(id)));
     var rows = [["填寫時間"].concat(fields.map(function (f) { return f.group ? f.group + "－" + f.head : f.head; }))];
-    fbFor(id).forEach(function (f) { rows.push([U.ftime(f.createdAt)].concat(fields.map(function (x) { return f[x.key]; }))); });
+    fbFor(id).forEach(function (f) {
+      rows.push([U.ftime(f.createdAt)].concat(fields.map(function (x) { var v = ansOf(f, x.key); return Array.isArray(v) ? v.join("、") : v; })));
+    });
     return rows;
   }
   function download(rows, name) {
@@ -299,7 +392,7 @@
     }
   });
   document.addEventListener("click", function (e) {
-    var t = e.target.closest("[data-close],[data-tab],[data-logout],[data-new],[data-edit],[data-del],[data-rm],[data-csv],[data-copy],[data-fbcsv],[data-copylink],[data-noimg],[data-mail],[data-tag],[data-savetpl],[data-deltpl]");
+    var t = e.target.closest("[data-close],[data-tab],[data-logout],[data-new],[data-edit],[data-del],[data-rm],[data-csv],[data-copy],[data-fbcsv],[data-copylink],[data-noimg],[data-mail],[data-tag],[data-savetpl],[data-deltpl],[data-survey],[data-qadd],[data-qmove],[data-qdel],[data-svsave],[data-svreset],[data-svapply],[data-svtpl],[data-svdeltpl]");
     if (!t) { if (e.target === $("dlg")) U.closeDlg(); return; }
     var d = t.dataset;
     if (d.close !== undefined) U.closeDlg();
@@ -319,6 +412,36 @@
     } else if (d.fbcsv !== undefined) {
       var a2 = actById(S.pick);
       download(fbRowsOf(S.pick), "課程滿意度-" + ((a2 && a2.title) || "活動"));
+    } else if (d.survey !== undefined) {
+      openSurvey(d.survey);
+    } else if (d.qadd !== undefined) {
+      edSync(); S.ed.sv.items.push(newItem(d.qadd)); renderSurvey(S.ed.sv.items.length - 1);
+    } else if (d.qmove !== undefined) {
+      edSync(); var qi = +t.closest("[data-i]").dataset.i, to = qi + +d.qmove, its = S.ed.sv.items;
+      if (to >= 0 && to < its.length) { var tmp = its[qi]; its[qi] = its[to]; its[to] = tmp; renderSurvey(to); }
+    } else if (d.qdel !== undefined) {
+      if (d.sure !== "1") { d.sure = "1"; t.textContent = "確定刪除？"; return; }
+      edSync(); S.ed.sv.items.splice(+t.closest("[data-i]").dataset.i, 1); renderSurvey();
+    } else if (d.svapply !== undefined) {
+      var pick = $("sv-tpl").value;
+      if (!pick) { U.toast("請先選擇一個範本。"); return; }
+      var src = pick === "__default" ? U.DEFAULT_SURVEY : (S.surveyTpls.filter(function (x) { return x.id === pick; })[0] || {}).survey;
+      if (src) { S.ed.sv = JSON.parse(JSON.stringify(src)); renderSurvey(); U.toast("已套用範本，記得按「儲存到這個活動」。"); }
+    } else if (d.svdeltpl !== undefined) {
+      var did = $("sv-tpl").value;
+      if (!did || did === "__default") { U.toast("請先選擇要刪除的範本。"); return; }
+      if (d.sure !== "1") { d.sure = "1"; t.textContent = "確定刪除範本？"; return; }
+      edSync(); svCall(call("deleteSurveyTpl", { id: did }), "範本已刪除。", true);
+    } else if (d.svtpl !== undefined) {
+      edSync(); var nm = $("sv-tplname").value.trim();
+      if (!nm) { U.toast("請先輸入範本名稱。"); $("sv-tplname").focus(); return; }
+      if (S.surveyTpls.some(function (x) { return x.name === nm; }) && d.sure !== "1") { d.sure = "1"; t.textContent = "已有同名範本，再按一次覆蓋"; return; }
+      svCall(call("saveSurveyTpl", { name: nm, survey: S.ed.sv }), "已存成範本「" + nm + "」。", true);
+    } else if (d.svreset !== undefined) {
+      if (d.sure !== "1") { d.sure = "1"; t.textContent = "確定恢復預設？"; return; }
+      svCall(call("saveSurvey", { id: S.ed.act, survey: null }), "已恢復成預設的課程滿意度調查。", false);
+    } else if (d.svsave !== undefined) {
+      edSync(); svCall(call("saveSurvey", { id: S.ed.act, survey: S.ed.sv }), "回饋問卷已儲存。", false);
     } else if (d.savetpl !== undefined) {
       var tn = $("m-tplname").value.trim();
       if (!tn) { U.toast("請先輸入範本名稱。"); $("m-tplname").focus(); return; }
