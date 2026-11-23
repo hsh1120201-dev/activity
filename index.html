@@ -88,7 +88,7 @@
   }
   function remember(sid) { S.sid = sid; try { localStorage.setItem("must-sid", sid); } catch (e) {} }
 
-  function openAct(id) {
+  function openAct(id, again) {
     var a = actById(id); if (!a) { U.closeDlg(); return; }
     var d = U.dparts(a.date);
     var h = U.head(a.title || "未命名活動") +
@@ -117,7 +117,9 @@
         '<p class="note">電話與 Gmail 僅做為聯繫用途。</p></form>';
       h += "<hr>" + cancelBox;
     } else if (a.status === "feedback") {
-      h += fbDone(id) ? '<div class="ok">感謝您填寫回饋問卷！</div>' : surveyForm(id);
+      /* 這台裝置填過時先顯示感謝，但仍可再填一份（現場共用平板、或換人填寫時用） */
+      h += fbDone(id) && !again ? '<div class="ok">這台裝置已經填過這個活動的回饋問卷，謝謝您！</div>' +
+        '<button class="btn ghost" type="button" data-again="' + esc(id) + '">再填一份問卷</button>' : surveyForm(id);
     } else {
       h += '<p class="note">這個活動已結束。</p>';
     }
@@ -222,9 +224,10 @@
     }
   });
   document.addEventListener("click", function (e) {
-    var t = e.target.closest("[data-act],[data-close],[data-reload]");
+    var t = e.target.closest("[data-act],[data-again],[data-close],[data-reload]");
     if (!t) { if (e.target === $("dlg")) U.closeDlg(); return; }
     if (t.dataset.act !== undefined) openAct(t.dataset.act);
+    else if (t.dataset.again !== undefined) openAct(t.dataset.again, true);
     else if (t.dataset.close !== undefined) U.closeDlg();
     else { S.error = ""; render(); load(); }
   });
