@@ -67,7 +67,7 @@
   function openMail() {
     var a = actById(S.pick), to = picked(S.pick);
     if (!a || !to.length) return;
-    var draft = S.draft && S.draft.act === a.id ? S.draft : { subject: "【{課程}】活動通知", body: "{姓名} 您好：\n\n\n\n新竹社會創新基地\n電話｜03-5593142 分機 3514" };
+    var draft = S.draft && S.draft.act === a.id ? S.draft : { subject: "【{課程}】活動通知", body: "{姓名} 您好：\n\n\n\n新竹社會創新基地\n電話｜03-5593142 分機 3529" };
     U.showDlg(U.head("寄信給報名者") + '<form id="mail-form" class="survey">' +
       '<div class="f"><span>收件人（' + to.length + " 位）</span><div class=\"fixed\">" + to.map(function (r) { return esc(r.name); }).join("、") + "</div></div>" +
       '<div class="f"><span>信件範本</span><div class="row"><select id="m-tpl" style="flex:1 1 220px">' + tplOptions() + '</select>' +
