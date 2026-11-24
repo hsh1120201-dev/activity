@@ -257,3 +257,14 @@ a.btn{text-decoration:none}
 .chart-svg svg{display:block;width:100%;max-width:640px;min-width:420px;height:auto}
 .chart figcaption{display:flex;justify-content:flex-end;max-width:640px}
 .chart svg g:hover text{fill:var(--ink)}
+/* 基地 logo（頁首） */
+.brand{display:inline-flex;align-items:center;text-decoration:none;color:inherit}
+.brand img{display:block;height:52px;width:auto}
+.brand .logo-dark{display:none}
+@media (min-width:700px){.brand img{height:68px}}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]) .brand .logo-light{display:none}
+  :root:not([data-theme="light"]) .brand .logo-dark{display:block}
+}
+:root[data-theme="dark"] .brand .logo-light{display:none}
+:root[data-theme="dark"] .brand .logo-dark{display:block}
