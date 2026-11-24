@@ -257,3 +257,16 @@ a.btn{text-decoration:none}
 .chart-svg svg{display:block;width:100%;max-width:640px;min-width:420px;height:auto}
 .chart figcaption{display:flex;justify-content:flex-end;max-width:640px}
 .chart svg g:hover text{fill:var(--ink)}
+
+/* EDM 和行銷貼文 */
+dialog:has(.edm){width:min(1120px,100%)}
+.edm{display:grid;gap:16px}
+.edm-fields{display:flex;flex-direction:column;gap:10px}
+.edm-out{display:flex;flex-direction:column;gap:10px;min-width:0}
+.edm-post{min-height:420px;font-size:0.9375rem;line-height:1.7;background:var(--paper)}
+.edm-frame{width:100%;height:560px;border:1px solid var(--line);border-radius:10px;background:#eef2ef}
+@media (min-width:860px){
+  .edm{grid-template-columns:minmax(0,5fr) minmax(0,6fr)}
+  .edm-out{position:sticky;top:0;align-self:start}
+  .edm-post{min-height:560px}
+}

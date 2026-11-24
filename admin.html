@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=LXGW+WenKai+TC:wght@400;700&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
 <link rel="icon" type="image/svg+xml" href="logo-mark.svg">
-<link rel="stylesheet" href="style.css?v=20261124c">
+<link rel="stylesheet" href="style.css?v=20261124d">
 </head>
 <body>
 <div class="wrap">
@@ -568,7 +568,7 @@
       h += acts.length ? acts.map(function (a) {
         return '<div class="arow">' + (a.image ? '<img class="athumb" src="' + esc(a.image) + '" alt="" loading="lazy">' : '<span class="athumb empty">無圖片</span>') + '<div class="info"><strong>' + esc(a.title || "未命名活動") + "</strong>" +
           '<span class="tags"><span class="pill ' + esc(a.status) + '">' + esc(U.STATUS[a.status] || "") + '</span><span class="cnt">' + esc(U.dparts(a.date).full) + " · " + esc(U.capText(a, S.counts)) + "</span></span></div>" +
-          '<div class="row"><button class="btn ghost sm" type="button" data-edit="' + esc(a.id) + '">編輯</button><button class="btn ghost sm" type="button" data-survey="' + esc(a.id) + '">回饋問卷</button><button class="btn ghost sm" type="button" data-actlink="' + esc(a.id) + '">複製活動頁連結</button><a class="btn ghost sm" href="' + esc(actLink(a.id)) + '" target="_blank" rel="noopener">開啟活動頁</a><button class="btn danger sm" type="button" data-del="' + esc(a.id) + '">刪除</button></div></div>';
+          '<div class="row"><button class="btn ghost sm" type="button" data-edit="' + esc(a.id) + '">編輯</button><button class="btn ghost sm" type="button" data-survey="' + esc(a.id) + '">回饋問卷</button><button class="btn ghost sm" type="button" data-edm="' + esc(a.id) + '">EDM和行銷貼文</button><button class="btn ghost sm" type="button" data-actlink="' + esc(a.id) + '">複製活動頁連結</button><a class="btn ghost sm" href="' + esc(actLink(a.id)) + '" target="_blank" rel="noopener">開啟活動頁</a><button class="btn danger sm" type="button" data-del="' + esc(a.id) + '">刪除</button></div></div>';
       }).join("") : '<div class="panel"><p class="note">還沒有活動。按「新增活動」建立第一個。</p></div>';
       h += "</div>";
     } else if (!S.acts.length) {
@@ -592,6 +592,155 @@
       h += S.pick === "__all" ? fbOverview() : fbReport(S.pick);
     }
     el.innerHTML = h;
+  }
+
+  /* ===== EDM 和行銷貼文：用活動資料自動產生，欄位可再修改（草稿存在這台電腦） ===== */
+  var EDM_KEYS = ["headline", "slogan", "intro", "topic", "speaker", "cores", "fee", "audience", "closing", "tags", "link"];
+  var EDM_LABELS = { headline: "貼文標題", slogan: "一句話亮點（會變成 #開頭那行）", intro: "開場介紹", topic: "課程主題", speaker: "導師／講師（姓名＋單位職稱，一行一位）",
+    cores: "活動重點（一行一點，可用「名稱：說明」）", fee: "費用", audience: "適合對象", closing: "結語", tags: "Hashtags", link: "報名連結" };
+  var CORE_ICONS = ["🔍", "🤝", "🌱", "💡", "📌"];
+  var WD_ = ["日", "一", "二", "三", "四", "五", "六"];
+  function edmKey(id) { return "hub-edm-" + id; }
+  function edmDraft(id) { try { return JSON.parse(localStorage.getItem(edmKey(id)) || "null"); } catch (e) { return null; } }
+  function edmDefaults(a) {
+    var desc = String(a.description || ""), keep = [], speakers = [], cores = [], aud = "";
+    desc.split(/\r?\n/).forEach(function (ln) {
+      var s = ln.trim(), m;
+      if ((m = /^(?:[^\w一-鿿]*)(?:實務)?(?:導師|講師|主講人?|分享人|分享者|與談人)\s*[：:]\s*(.+)$/.exec(s))) speakers.push(m[1].trim());
+      else if ((m = /^(?:[^\w一-鿿]*)(?:適合對象|招募對象|參加對象)\s*[：:]\s*(.+)$/.exec(s))) aud = m[1].trim();
+      else if ((m = /^(?:[・•●▪◆◇■□\-*✔✅☑]|\d{1,2}[.、)）])\s*(.+)$/.exec(s))) cores.push(m[1].trim());
+      else keep.push(ln);
+    });
+    var intro = keep.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+    var tags = ["#新竹社會創新基地"];
+    if (a.semester) tags.push("#" + String(a.semester).replace(/\s+/g, ""));
+    tags.push("#社會創新", "#免費課程", "#青年創業", "#新竹縣政府教育局");
+    return {
+      headline: a.title || "", slogan: "", intro: intro, topic: a.title || "", speaker: speakers.join("\n"), cores: cores.slice(0, 5).join("\n"),
+      fee: "全程免費", audience: aud, closing: "名額有限，歡迎一起來基地交流、把想法變成行動！", tags: tags.join(" "), link: actLink(a.id)
+    };
+  }
+  function edmDateLine(a) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(a.date || "");
+    if (!m) return "日期未定" + (a.time ? " " + a.time : "");
+    var wd = WD_[new Date(+m[1], +m[2] - 1, +m[3]).getDay()];
+    return m[1] + " 年 " + +m[2] + " 月 " + +m[3] + " 日（" + wd + "）" + (a.time ? a.time : "");
+  }
+  function edmCores(v) {
+    return lines(v.cores).map(function (c, i) {
+      return /^[\p{L}\p{N}【「（(]/u.test(c) ? CORE_ICONS[i % CORE_ICONS.length] + " " + c : c;
+    });
+  }
+  function edmFree(v) { return /免費/.test(v.fee || ""); }
+  function edmPost(a, v) {
+    var md = U.dparts(a.date).md, out = [], cores = edmCores(v), sp = lines(v.speaker), P = function () { out.push.apply(out, arguments); };
+    P("🚀【新竹社創基地】" + (md !== "未定" ? md + " " : "") + (v.headline || a.title || "") + " 🌱", "");
+    if (v.slogan) P("#" + v.slogan.replace(/^#/, "") + " 🔥");
+    if (v.intro) P(v.intro);
+    P("");
+    if (v.topic) P("📍【" + v.topic + "】", "");
+    if (sp.length) { sp.forEach(function (s) { P(" 👩‍💼 實務導師：" + s); }); P(""); }
+    if (cores.length) { P(" 🎯 " + cores.length + " 大重點："); cores.forEach(function (c) { P(" " + c); }); P(""); }
+    P("📅 活動資訊" + (edmFree(v) ? "（全程免費，立即搶位！）" : "（立即搶位！）"), "");
+    P(" 📅 時間：" + edmDateLine(a), "");
+    if (a.location) P(" 🏫 地點：" + a.location, "");
+    if (v.fee) P(" 💵 費用：" + (edmFree(v) ? "#" + v.fee.replace(/^#/, "") : v.fee), "");
+    if (a.capacity > 0) P(" 👥 名額：限 " + a.capacity + " 名，額滿為止", "");
+    if (v.link) P(" 🔗 立即報名：" + v.link + " 😎", "");
+    if (v.audience) P("🎯 適合對象：" + v.audience, "");
+    if (v.closing) P(v.closing, "");
+    if (v.tags) P(v.tags);
+    return out.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+  }
+  function edmHtml(a, v) {
+    var e = esc, br = function (t) { return e(t).replace(/\n/g, "<br>"); }, cores = edmCores(v), sp = lines(v.speaker), md = U.dparts(a.date).md;
+    var F = "font-family:'Noto Sans TC','PingFang TC','Microsoft JhengHei',Arial,sans-serif;";
+    var row = function (k, val) { return '<tr><td style="' + F + 'padding:8px 0;color:#566b65;font-size:14px;width:64px;vertical-align:top">' + k + '</td><td style="' + F + 'padding:8px 0;color:#14302b;font-size:15px;font-weight:bold">' + val + "</td></tr>"; };
+    var h = '<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>' + e(v.headline || a.title) + "</title></head>" +
+      '<body style="margin:0;padding:0;background:#eef2ef">' +
+      '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#eef2ef"><tr><td align="center" style="padding:24px 12px">' +
+      '<table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;background:#ffffff;border-radius:14px;overflow:hidden">' +
+      '<tr><td style="' + F + 'background:#0f6b5c;color:#ffffff;padding:16px 28px;font-size:13px;letter-spacing:2px">新竹社會創新基地 ｜ HSINCHU SOCIAL INNOVATION HUB</td></tr>';
+    if (/^https:\/\//.test(a.image || "")) h += '<tr><td><img src="' + e(a.image) + '" width="600" alt="' + e(a.title) + '" style="display:block;width:100%;height:auto;border:0"></td></tr>';
+    h += '<tr><td style="' + F + 'padding:28px 28px 8px">' +
+      '<div style="display:inline-block;background:#f2b632;color:#3a2a00;font-size:13px;font-weight:bold;padding:4px 12px;border-radius:999px">' + e((md !== "未定" ? md + " " : "") + (a.semester || "活動")) + (edmFree(v) ? "・免費參加" : "") + "</div>" +
+      '<h1 style="' + F + 'margin:14px 0 8px;font-size:26px;line-height:1.35;color:#14302b">' + e(v.headline || a.title) + "</h1>" +
+      (v.slogan ? '<p style="' + F + 'margin:0 0 6px;font-size:17px;color:#0f6b5c;font-weight:bold">' + e(v.slogan.replace(/^#/, "")) + "</p>" : "") +
+      "</td></tr>";
+    if (v.intro) h += '<tr><td style="' + F + 'padding:8px 28px;font-size:15px;line-height:1.8;color:#2b423d">' + br(v.intro) + "</td></tr>";
+    if (sp.length || v.topic && v.topic !== v.headline) {
+      h += '<tr><td style="padding:12px 28px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f2f5f1;border-left:4px solid #0f6b5c;border-radius:8px"><tr><td style="' + F + 'padding:14px 18px">' +
+        (v.topic && v.topic !== v.headline ? '<div style="font-size:16px;font-weight:bold;color:#14302b;margin-bottom:6px">📍 ' + e(v.topic) + "</div>" : "") +
+        sp.map(function (s) { return '<div style="font-size:15px;color:#2b423d;line-height:1.7">👩‍💼 實務導師：<b>' + e(s) + "</b></div>"; }).join("") +
+        "</td></tr></table></td></tr>";
+    }
+    if (cores.length) {
+      h += '<tr><td style="' + F + 'padding:16px 28px 4px;font-size:17px;font-weight:bold;color:#14302b">🎯 活動重點</td></tr>' +
+        '<tr><td style="padding:0 28px 8px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">' +
+        cores.map(function (c) { return '<tr><td style="' + F + 'padding:8px 0;border-bottom:1px solid #e3e9e5;font-size:15px;line-height:1.7;color:#2b423d">' + e(c) + "</td></tr>"; }).join("") +
+        "</table></td></tr>";
+    }
+    h += '<tr><td style="padding:16px 28px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border:1px solid #d3dcd6;border-radius:10px"><tr><td style="padding:10px 18px">' +
+      '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">' +
+      row("時間", e(edmDateLine(a))) + (a.location ? row("地點", e(a.location)) : "") + (v.fee ? row("費用", e(v.fee.replace(/^#/, ""))) : "") +
+      (a.capacity > 0 ? row("名額", "限 " + e(a.capacity) + " 名，額滿為止") : "") + (v.audience ? row("對象", e(v.audience)) : "") +
+      "</table></td></tr></table></td></tr>";
+    if (v.link) h += '<tr><td align="center" style="padding:12px 28px 8px"><a href="' + e(v.link) + '" target="_blank" style="' + F + 'display:inline-block;background:#0f6b5c;color:#ffffff;text-decoration:none;font-size:18px;font-weight:bold;padding:14px 40px;border-radius:999px">立即報名 →</a>' +
+      '<div style="' + F + 'font-size:12px;color:#7a8b86;margin-top:10px;word-break:break-all">或複製連結：' + e(v.link) + "</div></td></tr>";
+    if (v.closing) h += '<tr><td style="' + F + 'padding:12px 28px 24px;font-size:15px;line-height:1.8;color:#2b423d;text-align:center">' + br(v.closing) + "</td></tr>";
+    h += '<tr><td style="' + F + 'background:#14302b;color:#c9d6d1;padding:18px 28px;font-size:12px;line-height:1.8">新竹社會創新基地（同心樓／竹北市中山路 220 號 3 樓）<br>聯絡電話：03-5593142 分機 3529' +
+      (v.tags ? '<br><span style="color:#8fa59e">' + e(v.tags) + "</span>" : "") + "</td></tr>" +
+      "</table></td></tr></table></body></html>";
+    return h;
+  }
+  function edmVals() {
+    var v = {};
+    EDM_KEYS.forEach(function (k) { var el = $("edm-" + k); v[k] = el ? el.value.trim() : ""; });
+    return v;
+  }
+  function edmRefresh(save) {
+    var a = actById(S.edm.id); if (!a) return;
+    var v = edmVals();
+    if (save) { try { localStorage.setItem(edmKey(a.id), JSON.stringify(v)); } catch (e) {} }
+    S.edm.post = edmPost(a, v); S.edm.html = edmHtml(a, v);
+    var p = $("edm-post"); if (p) p.value = S.edm.post;
+    var f = $("edm-frame"); if (f && S.edm.view === "edm") f.srcdoc = S.edm.html;
+  }
+  function openEdm(id) {
+    var a = actById(id); if (!a) return;
+    var v = Object.assign(edmDefaults(a), edmDraft(id) || {});
+    S.edm = { id: id, view: (S.edm && S.edm.view) || "post" };
+    var big = { intro: 5, cores: 4, speaker: 2, closing: 2 };
+    var fields = EDM_KEYS.map(function (k) {
+      return big[k] ? '<label class="f" for="edm-' + k + '"><span>' + EDM_LABELS[k] + '</span><textarea id="edm-' + k + '" rows="' + big[k] + '" data-edmf>' + esc(v[k]) + "</textarea></label>"
+        : U.fld("edm-" + k, EDM_LABELS[k], v[k], false, "text", " data-edmf");
+    });
+    U.showDlg(U.head("EDM 和行銷貼文") +
+      '<p class="note" style="margin:0">已帶入「' + esc(a.title) + '」的活動資料（日期、時間、地點、名額、說明、圖片）。下面欄位可以直接改，預覽會即時更新；改過的內容會記在這台電腦。</p>' +
+      '<div class="edm"><form id="edm-form" class="edm-fields">' + fields.join("") +
+      '<button class="btn ghost sm" type="button" data-edmreset>依活動資料重新產生</button></form>' +
+      '<div class="edm-out"><div class="tabs" role="tablist" style="margin:0">' +
+      '<button type="button" role="tab" data-edmview="post" aria-selected="' + (S.edm.view === "post") + '">FB／LINE 貼文</button>' +
+      '<button type="button" role="tab" data-edmview="edm" aria-selected="' + (S.edm.view === "edm") + '">EDM 電子報</button></div>' +
+      (S.edm.view === "post"
+        ? '<textarea id="edm-post" class="edm-post" readonly></textarea><div class="row"><button class="btn sm" type="button" data-edmcopy="post">複製貼文</button></div>'
+        : '<iframe id="edm-frame" class="edm-frame" title="EDM 預覽"></iframe><div class="row"><button class="btn sm" type="button" data-edmcopy="edm">複製 EDM（貼到 Gmail）</button>' +
+          '<button class="btn ghost sm" type="button" data-edmcopy="src">複製 HTML 原始碼</button><button class="btn ghost sm" type="button" data-edmdl>下載 HTML</button></div>' +
+          '<p class="note" style="margin:0">Gmail：新增郵件 → 在內文貼上即可。電子報平台（如 Mailchimp、Beefree）請用「複製 HTML 原始碼」。</p>') +
+      "</div></div>");
+    edmRefresh(false);
+  }
+  function copyRich(html, text) {
+    if (window.ClipboardItem && navigator.clipboard && navigator.clipboard.write) {
+      return navigator.clipboard.write([new ClipboardItem({ "text/html": new Blob([html], { type: "text/html" }), "text/plain": new Blob([text], { type: "text/plain" }) })]);
+    }
+    return new Promise(function (ok, bad) {
+      var box = document.createElement("div"); box.contentEditable = "true"; box.style.cssText = "position:fixed;left:-9999px;top:0";
+      box.innerHTML = html; ($("dlg").open ? $("dlg") : document.body).appendChild(box);
+      var r = document.createRange(); r.selectNodeContents(box); var sel = getSelection(); sel.removeAllRanges(); sel.addRange(r);
+      var done = false; try { done = document.execCommand("copy"); } catch (e) {}
+      sel.removeAllRanges(); box.remove(); done ? ok() : bad();
+    });
   }
 
   function openEdit(id) {
@@ -661,7 +810,7 @@
     }
   });
   document.addEventListener("click", function (e) {
-    var t = e.target.closest("[data-close],[data-tab],[data-logout],[data-new],[data-edit],[data-del],[data-rm],[data-csv],[data-copy],[data-fbcsv],[data-fbxlsx],[data-fbxlsxall],[data-fbprint],[data-chartpng],[data-allcharts],[data-copylink],[data-actlink],[data-noimg],[data-mail],[data-tag],[data-savetpl],[data-deltpl],[data-survey],[data-qadd],[data-qmove],[data-qdel],[data-svsave],[data-svreset],[data-svapply],[data-svtpl],[data-svdeltpl]");
+    var t = e.target.closest("[data-close],[data-tab],[data-logout],[data-new],[data-edit],[data-del],[data-rm],[data-csv],[data-copy],[data-fbcsv],[data-fbxlsx],[data-fbxlsxall],[data-fbprint],[data-chartpng],[data-allcharts],[data-copylink],[data-actlink],[data-noimg],[data-mail],[data-tag],[data-savetpl],[data-deltpl],[data-survey],[data-qadd],[data-qmove],[data-qdel],[data-svsave],[data-svreset],[data-svapply],[data-svtpl],[data-svdeltpl],[data-edm],[data-edmview],[data-edmcopy],[data-edmdl],[data-edmreset]");
     if (!t) { if (e.target === $("dlg")) U.closeDlg(); return; }
     var d = t.dataset;
     if (d.close !== undefined) U.closeDlg();
@@ -710,6 +859,23 @@
       allChartsPNG(d.allcharts);
     } else if (d.fbprint !== undefined) {
       window.print();
+    } else if (d.edm !== undefined) {
+      openEdm(d.edm);
+    } else if (d.edmview !== undefined) {
+      S.edm.view = d.edmview; openEdm(S.edm.id);
+    } else if (d.edmreset !== undefined) {
+      if (d.sure !== "1") { d.sure = "1"; t.textContent = "會清掉修改，確定？"; return; }
+      try { localStorage.removeItem(edmKey(S.edm.id)); } catch (x) {}
+      openEdm(S.edm.id); U.toast("已依活動資料重新產生。");
+    } else if (d.edmdl !== undefined) {
+      var ea = actById(S.edm.id);
+      saveBlob(new Blob([S.edm.html], { type: "text/html;charset=utf-8" }), "EDM-" + ((ea && ea.title) || "活動") + ".html");
+    } else if (d.edmcopy !== undefined) {
+      edmRefresh(false);
+      var cp = d.edmcopy === "post" ? navigator.clipboard.writeText(S.edm.post)
+        : d.edmcopy === "src" ? navigator.clipboard.writeText(S.edm.html) : copyRich(S.edm.html, S.edm.post);
+      cp.then(function () { U.toast(d.edmcopy === "post" ? "貼文已複製，可直接貼到 FB 或 LINE。" : d.edmcopy === "src" ? "HTML 原始碼已複製。" : "EDM 已複製，到 Gmail 新郵件內文貼上即可。"); },
+        function () { U.toast("無法自動複製，請改用「下載 HTML」。"); });
     } else if (d.survey !== undefined) {
       openSurvey(d.survey);
     } else if (d.qadd !== undefined) {
@@ -770,7 +936,7 @@
       navigator.clipboard.writeText(text).then(function () { U.toast("名單已複製，可直接貼到試算表。"); }, function () { U.toast("無法複製，請改用下載 CSV。"); });
     }
   });
-  document.addEventListener("input", function (e) { if (e.target.id === "m-subject" || e.target.id === "m-body") mailPreview(); });
+  document.addEventListener("input", function (e) { if (e.target.id === "m-subject" || e.target.id === "m-body") mailPreview(); else if (e.target.dataset && e.target.dataset.edmf !== undefined) edmRefresh(true); });
   document.addEventListener("change", function (e) {
     if (e.target.id === "a-pick") { S.pick = e.target.value; render(); }
     else if (e.target.id === "m-tpl") {
