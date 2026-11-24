@@ -35,7 +35,42 @@
   "use strict";
   var $ = U.$, esc = U.esc;
   var S = { token: "", acts: [], regs: [], fbs: [], mails: [], templates: [], quota: null, sender: "", off: {}, counts: {}, loaded: false, tab: "acts", pick: "", busy: false };
-  try { S.token = sessionStorage.getItem("must-admin") || ""; } catch (e) {}
+  try { S.token = sessionStorage.getItem("must-admin") || ""; S.email = sessionStorage.getItem("must-admin-email") || ""; } catch (e) {}
+  S.cfg = null; // 登入方式（Google 或密碼），向後端問一次
+
+  /* ---------- Google 帳號登入 ---------- */
+  function loadLoginCfg() {
+    U.api("loginConfig").then(function (j) { S.cfg = { clientId: j.clientId || "", password: !!j.password }; })
+      .catch(function () { S.cfg = { clientId: "", password: true }; }) // 舊版後端：沿用密碼登入
+      .then(function () { if (!S.token) render(); });
+  }
+  function gsiReady(cb) {
+    if (window.google && google.accounts && google.accounts.id) return cb();
+    var old = document.getElementById("gsi-js");
+    if (old) { old.addEventListener("load", cb); return; }
+    var sc = document.createElement("script");
+    sc.id = "gsi-js"; sc.src = "https://accounts.google.com/gsi/client"; sc.async = true;
+    sc.onload = cb;
+    sc.onerror = function () { var m = $("gsi-msg"); if (m) m.textContent = "Google 登入元件載入失敗，請檢查網路後重新整理。"; };
+    document.head.appendChild(sc);
+  }
+  function showGoogleBtn() {
+    gsiReady(function () {
+      var box = $("gsi-btn");
+      if (!box) return;
+      google.accounts.id.initialize({ client_id: S.cfg.clientId, callback: onGoogleCredential, ux_mode: "popup", auto_select: false });
+      google.accounts.id.renderButton(box, { theme: "outline", size: "large", text: "signin_with", shape: "pill", locale: "zh-TW", width: 280 });
+    });
+  }
+  function onGoogleCredential(resp) {
+    if (S.busy) return; S.busy = true;
+    var m = $("gsi-msg"); if (m) m.textContent = "驗證中…";
+    U.api("googleLogin", { credential: resp.credential }).then(function (j) {
+      S.token = j.token; S.email = j.email || "";
+      try { sessionStorage.setItem("must-admin", S.token); sessionStorage.setItem("must-admin-email", S.email); } catch (x) {}
+      render(); return load();
+    }).catch(function (x) { if (m) m.textContent = ""; U.toast(x.message); }).then(function () { S.busy = false; });
+  }
 
   function actById(id) { for (var i = 0; i < S.acts.length; i++) if (S.acts[i].id === id) return S.acts[i]; return null; }
   function regsFor(id) { return S.regs.filter(function (r) { return r.activityId === id; }).sort(function (a, b) { return (a.createdAt || "") < (b.createdAt || "") ? -1 : 1; }); }
@@ -471,8 +506,9 @@
   }
 
   function logout(msg) {
-    S.token = ""; S.loaded = false;
-    try { sessionStorage.removeItem("must-admin"); } catch (e) {}
+    S.token = ""; S.email = ""; S.loaded = false;
+    try { sessionStorage.removeItem("must-admin"); sessionStorage.removeItem("must-admin-email"); } catch (e) {}
+    try { if (window.google && google.accounts && google.accounts.id) google.accounts.id.disableAutoSelect(); } catch (e) {}
     render(); if (msg) U.toast(msg);
   }
   function call(action, data) {
@@ -509,6 +545,13 @@
     var el = $("body");
     if (!U.configured()) { el.innerHTML = U.SETUP_NOTE; return; }
     if (!S.token) {
+      if (!S.cfg) { el.innerHTML = '<div class="panel login"><p class="note">載入中…</p></div>'; return; }
+      if (S.cfg.clientId) {
+        el.innerHTML = '<div class="panel login"><h3 style="margin-top:0">後台登入</h3><div id="gsi-btn" style="min-height:44px"></div>' +
+          '<p class="note" id="gsi-msg" aria-live="polite"></p><p class="note">請用已加入「後台帳號」名單的 Google 帳號登入。</p></div>';
+        showGoogleBtn();
+        return;
+      }
       el.innerHTML = '<form id="login-form" class="panel login">' + U.fld("pw", "後台密碼", "", true, "password", ' autocomplete="current-password"') +
         '<button class="btn" type="submit">登入</button><p class="note">密碼放在 Google 試算表「設定」工作表的 B1 儲存格。</p></form>';
       return;
@@ -516,7 +559,8 @@
     if (!S.loaded) { el.innerHTML = '<div class="panel"><p class="note">載入中…</p></div>'; return; }
     var tabs = [["acts", "活動管理"], ["regs", "報名名單"], ["fb", "回饋管理"]];
     var h = '<div class="tabs" role="tablist">' + tabs.map(function (t) { return '<button type="button" role="tab" aria-selected="' + (S.tab === t[0]) + '" data-tab="' + t[0] + '">' + t[1] + "</button>"; }).join("") +
-      '<button type="button" data-logout style="margin-left:auto">登出</button></div>';
+      (S.email ? '<span class="cnt" style="margin-left:auto;align-self:center" title="目前登入的帳號">' + esc(S.email) + "</span>" : "") +
+      '<button type="button" data-logout' + (S.email ? "" : ' style="margin-left:auto"') + '>登出</button></div>';
 
     if (S.tab === "acts") {
       var acts = U.sortActs(S.acts);
@@ -793,6 +837,7 @@
   }
 
   render();
+  if (U.configured()) loadLoginCfg();
   if (S.token && U.configured()) load().catch(function (e) { if (e.code !== "auth") { $("body").innerHTML = '<div class="panel"><p class="note">' + esc(e.message) + "</p></div>"; } });
 })();
 </script>
