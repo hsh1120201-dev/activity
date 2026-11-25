@@ -377,7 +377,7 @@ else if(!/^https:\/\/script\.google\.com\/.+\/exec$/.test(API)){
 setInterval(()=>{if(acts)rebuild()},10*60*1000); // 過午夜時更新「還有幾天」與清單
 try{navigator.wakeLock&&navigator.wakeLock.request("screen").catch(()=>{})}catch(e){}
 document.addEventListener("click",()=>{try{document.fullscreenElement||document.documentElement.requestFullscreen().catch(()=>{})}catch(e){}});
-setTimeout(()=>location.reload(),6*3600*1000); // 每 6 小時重新整理，避免長時間掛著卡住
+setTimeout(()=>location.reload(),30*60*1000); // 每 30 分鐘重新整理：程式更新會自動套用，也避免長時間掛著卡住
 </script>
 </body>
 </html>
