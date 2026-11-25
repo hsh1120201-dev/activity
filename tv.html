@@ -50,6 +50,15 @@ main{display:grid;grid-template-columns:1fr 27vw;gap:2vw;min-height:0}
 .p-fb{background:var(--sea);color:#fff}
 .p-cat{border:2px solid var(--line);color:var(--muted)}
 .p-team{background:var(--ok);color:#06210f}
+.p-story{background:#c0661c;color:#fff}
+.row.story{border-left-color:#c0661c}
+.row.story.on{background:#3d2614;box-shadow:inset 0 0 0 2px #c0661c}
+.stage.story{grid-template-columns:52% 1fr}
+.collage{display:grid;gap:.6vh;background:#0c0908;min-height:0;overflow:hidden}
+.collage.n1{grid-template:1fr/1fr}.collage.n2{grid-template:1fr/1fr 1fr}.collage.n3{grid-template:1fr 1fr/2fr 1fr}.collage.n4{grid-template:1fr 1fr/1fr 1fr}
+.collage.n3 .c0{grid-row:span 2}
+.collage div{background-size:cover;background-position:center;min-height:0}
+.qr.story b{color:#c0661c}
 .row.team{border-left-color:var(--ok)}
 .row.team.on{background:#173826;box-shadow:inset 0 0 0 2px var(--ok)}
 .qr.team b{color:#1d7a46}
@@ -189,9 +198,14 @@ setInterval(tickClock,1000);tickClock();
 $("siteQr").innerHTML=qrSvg(SITE);
 if(CAT)$("ttl").textContent=CAT;
 
-let acts=null,counts={},items=[],cur=0,curId="",timer=null,teams=[];
+let acts=null,counts={},items=[],cur=0,curId="",timer=null,teams=[],stories=[];
+const STORY_DAYS=Math.max(7,+Q.get("story")||90); // 成果花絮：活動後幾天內輪播
+const STORY_MAX=6;
 /* 進駐團隊活動：公告欄後台「團隊活動」類型（第一張照片當海報、相關連結當報名 QR） */
 const photo=u=>{const m=/drive\.google\.com\/(?:file\/d\/|open\?id=|uc\?(?:[^#]*&)?id=)([\w-]{20,})/.exec(u||"");return m?"https://lh3.googleusercontent.com/d/"+m[1]+"=w1600":u};
+const ytId=u=>{const m=/(?:youtu\.be\/|youtube\.com\/(?:watch\?(?:[^#]*&)?v=|shorts\/|live\/|embed\/))([\w-]{11})/.exec(u||"");return m?m[1]:""};
+const toStory=p=>{const vids=(p.youtube||[]).map(ytId).filter(Boolean);const pics=(p.photos||[]).map(photo);if(!pics.length&&vids[0])pics.push("https://i.ytimg.com/vi/"+vids[0]+"/hqdefault.jpg");
+  return{id:"s_"+p.id,status:"story",title:p.title,date:p.date,description:p.body,pics,vid:vids[0]||"",base:p.base,pinned:p.pinned,image:pics[0]||""}};
 const toTeam=p=>({id:"p_"+p.id,status:"team",title:p.title,date:p.date,time:p.time,location:p.location,description:p.body,image:p.photos&&p.photos[0]?photo(p.photos[0]):"",team:p.team,link:p.link,base:p.base});
 
 /* 要上電視的活動：報名中（今天以後或未定日期）在前，依日期近到遠；回饋中（結束 14 天內）在後 */
@@ -203,7 +217,8 @@ function pick(){
     .sort((a,b)=>(okDate(a.date)?a.date:"9999").localeCompare(okDate(b.date)?b.date:"9999"));
   const fb=SHOW_FB?list.filter(a=>a.status==="feedback"&&(!okDate(a.date)||(a.date<=T&&diff(T,a.date)<=FB_DAYS)))
     .sort((a,b)=>(b.date||"").localeCompare(a.date||"")):[];
-  return open.concat(fb);
+  const sto=CAT?[]:stories.filter(a=>a.pics.length&&(a.pinned||!okDate(a.date)||diff(T,a.date)<=STORY_DAYS)).slice(0,STORY_MAX);
+  return open.concat(fb,sto);
 }
 
 function capInfo(a){
@@ -214,7 +229,9 @@ function capInfo(a){
 }
 
 function slide(a){
+  $("stage").classList.remove("story");
   if(a.status==="team")return slideTeam(a);
+  if(a.status==="story")return slideStory(a);
   const T=tpe().date, fb=a.status==="feedback", ci=capInfo(a);
   const st=$("stage");
   const img=a.image?String(a.image):"";
@@ -260,18 +277,32 @@ function slideTeam(a){
   const p=$("prog");if(items.length>1){p.style.animationDuration=SEC+"ms";p.classList.add("run")}
 }
 
+function slideStory(a){
+  const st=$("stage"), pics=a.pics.slice(0,4);
+  st.classList.remove("noimg");st.classList.add("story");
+  const qr=a.vid?`<div class="qr story">${qrSvg("https://youtu.be/"+a.vid)}<b>掃碼看活動影片</b></div>`:"";
+  st.innerHTML=`<div class="collage n${pics.length}">${pics.map((u,i)=>`<div class="c${i}" style="background-image:url('${esc(u)}')"></div>`).join("")}</div>`+
+    `<div class="info fade"><div class="tags"><span class="pill p-story">成果花絮</span>${a.base&&a.base!=="兩基地"?`<span class="pill p-cat">${esc(a.base)}基地</span>`:""}</div>`+
+    `<h2 class="title${a.title.length>22?" long":""}">${esc(a.title)}</h2>`+
+    (okDate(a.date)?`<div class="place"><b>活動日期</b><span>${a.date.replace(/-/g,"/")}（${WD[parse(a.date).getUTCDay()]}）</span></div>`:"")+
+    (a.description?`<p class="desc">${esc(String(a.description).replace(/https?:\/\/\S+/g,"").trim())}</p>`:"")+
+    `<div class="bottom"><div class="cap"><div class="k" style="white-space:nowrap">活動精彩回顧</div><div class="n" style="font-size:3vh;font-family:var(--f-body);font-weight:900;line-height:1.4;white-space:nowrap">感謝參與！</div></div>${qr}</div></div><i class="prog" id="prog"></i>`;
+  fitDesc();
+  const p=$("prog");if(items.length>1){p.style.animationDuration=SEC+"ms";p.classList.add("run")}
+}
+
 /* 簡介只顯示放得下的整行，不切半行 */
 function fitDesc(){const d=document.querySelector(".desc");if(!d)return;d.style.webkitLineClamp=3;d.style.maxHeight="";
   const lh=parseFloat(getComputedStyle(d).lineHeight),n=Math.min(3,Math.floor((d.clientHeight+1)/lh));
   if(n<1)d.remove();else{d.style.webkitLineClamp=n;d.style.maxHeight=n*lh+"px"}}
 document.fonts&&document.fonts.ready.then(fitDesc);
 function renderList(){
-  $("cnt").textContent=items.length?`${items.length} 場`:"";
+  const nAct=items.filter(a=>a.status!=="story").length;$("cnt").textContent=nAct?`${nAct} 場`:"";
   const max=7, start=items.length>max?Math.min(Math.max(0,cur-2),items.length-max):0;
   $("list").innerHTML=items.slice(start,start+max).map(a=>{
-    const fb=a.status==="feedback",tm=a.status==="team",ci=capInfo(a);
-    const sub=tm?["進駐團隊",a.team,a.time].filter(Boolean).join("・"):fb?"回饋中・掃碼填問卷":[a.time,ci.c?(ci.left===0?"已額滿":`剩 ${ci.left} 位`):""].filter(Boolean).join("・");
-    return `<li class="row${fb?" fb":tm?" team":""}${a.id===curId?" on":""}"><div class="d">${md(a.date)}<small>${wdOf(a.date)}</small></div><div><div class="tt">${esc(a.title)}</div><div class="sub">${esc(sub)}</div></div></li>`}).join("");
+    const fb=a.status==="feedback",tm=a.status==="team",sto=a.status==="story",ci=capInfo(a);
+    const sub=sto?"成果花絮・活動回顧":tm?["進駐團隊",a.team,a.time].filter(Boolean).join("・"):fb?"回饋中・掃碼填問卷":[a.time,ci.c?(ci.left===0?"已額滿":`剩 ${ci.left} 位`):""].filter(Boolean).join("・");
+    return `<li class="row${fb?" fb":tm?" team":sto?" story":""}${a.id===curId?" on":""}"><div class="d">${md(a.date)}<small>${wdOf(a.date)}</small></div><div><div class="tt">${esc(a.title)}</div><div class="sub">${esc(sub)}</div></div></li>`}).join("");
 }
 
 function show(i){
@@ -320,6 +351,8 @@ async function load(){
     if(!j.ok&&/不支援/.test(j.error||"")){const r2=await fetch(API,{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify({action:"list"})});j=await r2.json()} // 後端還沒更新
     if(!j.ok)throw new Error(j.error);
     teams=(j.posts||[]).filter(p=>p.type==="團隊活動").map(toTeam);
+    stories=(j.posts||[]).filter(p=>p.type==="成果花絮").map(toStory)
+      .sort((a,b)=>(b.pinned-a.pinned)||(b.date||"").localeCompare(a.date||""));
     const oa=acts,oc=counts;
     acts=j.activities||[];counts=j.counts||{};
     rebuild();
