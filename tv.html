@@ -49,6 +49,10 @@ main{display:grid;grid-template-columns:1fr 27vw;gap:2vw;min-height:0}
 .p-full{background:var(--bad);color:#fff}
 .p-fb{background:var(--sea);color:#fff}
 .p-cat{border:2px solid var(--line);color:var(--muted)}
+.p-team{background:var(--ok);color:#06210f}
+.row.team{border-left-color:var(--ok)}
+.row.team.on{background:#173826;box-shadow:inset 0 0 0 2px var(--ok)}
+.qr.team b{color:#1d7a46}
 .title{margin:0;font-size:5vh;font-weight:900;line-height:1.25;text-wrap:balance;overflow:hidden;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical}
 .stage.noimg .title{font-size:7vh}
 .title.long{font-size:4.2vh}.stage.noimg .title.long{font-size:5.6vh}
@@ -185,13 +189,17 @@ setInterval(tickClock,1000);tickClock();
 $("siteQr").innerHTML=qrSvg(SITE);
 if(CAT)$("ttl").textContent=CAT;
 
-let acts=null,counts={},items=[],cur=0,curId="",timer=null;
+let acts=null,counts={},items=[],cur=0,curId="",timer=null,teams=[];
+/* 進駐團隊活動：公告欄後台「團隊活動」類型（第一張照片當海報、相關連結當報名 QR） */
+const photo=u=>{const m=/drive\.google\.com\/(?:file\/d\/|open\?id=|uc\?(?:[^#]*&)?id=)([\w-]{20,})/.exec(u||"");return m?"https://lh3.googleusercontent.com/d/"+m[1]+"=w1600":u};
+const toTeam=p=>({id:"p_"+p.id,status:"team",title:p.title,date:p.date,time:p.time,location:p.location,description:p.body,image:p.photos&&p.photos[0]?photo(p.photos[0]):"",team:p.team,link:p.link,base:p.base});
 
 /* 要上電視的活動：報名中（今天以後或未定日期）在前，依日期近到遠；回饋中（結束 14 天內）在後 */
 function pick(){
   const T=tpe().date;
   const list=(acts||[]).filter(a=>a&&a.title&&(!CAT||a.semester===CAT));
-  const open=list.filter(a=>a.status==="open"&&(!okDate(a.date)||a.date>=T))
+  const tm=CAT?[]:teams.filter(a=>a.title&&(!okDate(a.date)||a.date>=T));
+  const open=list.filter(a=>a.status==="open"&&(!okDate(a.date)||a.date>=T)).concat(tm)
     .sort((a,b)=>(okDate(a.date)?a.date:"9999").localeCompare(okDate(b.date)?b.date:"9999"));
   const fb=SHOW_FB?list.filter(a=>a.status==="feedback"&&(!okDate(a.date)||(a.date<=T&&diff(T,a.date)<=FB_DAYS)))
     .sort((a,b)=>(b.date||"").localeCompare(a.date||"")):[];
@@ -206,6 +214,7 @@ function capInfo(a){
 }
 
 function slide(a){
+  if(a.status==="team")return slideTeam(a);
   const T=tpe().date, fb=a.status==="feedback", ci=capInfo(a);
   const st=$("stage");
   const img=a.image?String(a.image):"";
@@ -232,6 +241,25 @@ function slide(a){
   const nx=items[(cur+1)%items.length];if(nx&&nx.image){const im=new Image();im.src=nx.image}
 }
 
+function slideTeam(a){
+  const T=tpe().date, st=$("stage"), img=a.image||"";
+  st.classList.toggle("noimg",!img);
+  let tag=`<span class="pill p-team">進駐團隊活動</span>`+(a.team?`<span class="pill p-cat">${esc(a.team)}</span>`:"");
+  let cd="";
+  if(okDate(a.date)){const d=diff(a.date,T);cd=d===0?`<span class="cd today">就是今天</span>`:d===1?`<span class="cd">明天</span>`:`<span class="cd">還有 ${d} 天</span>`}
+  const when=okDate(a.date)?`<div class="when"><span class="md">${md(a.date)}</span><span class="wd">${wdOf(a.date)}${a.time?`<small>${esc(a.time)}</small>`:""}</span></div>`
+    :`<div class="when"><span class="wd">日期未定${a.time?`<small>${esc(a.time)}</small>`:""}</span></div>`;
+  const by=`<div class="cap"><div class="k">主辦</div><div class="n" style="font-size:4.2vh;font-family:var(--f-body);font-weight:900;line-height:1.3">${esc(a.team||(a.base==="青創"?"新竹青創基地進駐團隊":a.base==="社創"?"新竹社創基地進駐團隊":"兩基地進駐團隊"))}</div></div>`;
+  const qr=/^https?:\/\//.test(a.link||"")?`<div class="qr team">${qrSvg(a.link)}<b>掃碼了解更多</b></div>`:"";
+  st.innerHTML=(img?`<div class="poster"><div class="blur" style="background-image:url('${esc(img)}')"></div><img src="${esc(img)}" alt="" referrerpolicy="no-referrer" onerror="this.closest('.stage').classList.add('noimg');this.parentNode.remove()"></div>`:"<div></div>")+
+    `<div class="info fade"><div class="tags">${tag}${cd}</div><h2 class="title${a.title.length>22?" long":""}">${esc(a.title)}</h2>${when}`+
+    (a.location?`<div class="place"><b>地點</b><span>${esc(a.location)}</span></div>`:"")+
+    (a.description?`<p class="desc">${esc(String(a.description).replace(/https?:\/\/\S+/g,"").trim())}</p>`:"")+
+    `<div class="bottom">${by}${qr}</div></div><i class="prog" id="prog"></i>`;
+  fitDesc();
+  const p=$("prog");if(items.length>1){p.style.animationDuration=SEC+"ms";p.classList.add("run")}
+}
+
 /* 簡介只顯示放得下的整行，不切半行 */
 function fitDesc(){const d=document.querySelector(".desc");if(!d)return;d.style.webkitLineClamp=3;d.style.maxHeight="";
   const lh=parseFloat(getComputedStyle(d).lineHeight),n=Math.min(3,Math.floor((d.clientHeight+1)/lh));
@@ -241,9 +269,9 @@ function renderList(){
   $("cnt").textContent=items.length?`${items.length} 場`:"";
   const max=7, start=items.length>max?Math.min(Math.max(0,cur-2),items.length-max):0;
   $("list").innerHTML=items.slice(start,start+max).map(a=>{
-    const fb=a.status==="feedback",ci=capInfo(a);
-    const sub=fb?"回饋中・掃碼填問卷":[a.time,ci.c?(ci.left===0?"已額滿":`剩 ${ci.left} 位`):""].filter(Boolean).join("・");
-    return `<li class="row${fb?" fb":""}${a.id===curId?" on":""}"><div class="d">${md(a.date)}<small>${wdOf(a.date)}</small></div><div><div class="tt">${esc(a.title)}</div><div class="sub">${esc(sub)}</div></div></li>`}).join("");
+    const fb=a.status==="feedback",tm=a.status==="team",ci=capInfo(a);
+    const sub=tm?["進駐團隊",a.team,a.time].filter(Boolean).join("・"):fb?"回饋中・掃碼填問卷":[a.time,ci.c?(ci.left===0?"已額滿":`剩 ${ci.left} 位`):""].filter(Boolean).join("・");
+    return `<li class="row${fb?" fb":tm?" team":""}${a.id===curId?" on":""}"><div class="d">${md(a.date)}<small>${wdOf(a.date)}</small></div><div><div class="tt">${esc(a.title)}</div><div class="sub">${esc(sub)}</div></div></li>`}).join("");
 }
 
 function show(i){
@@ -263,7 +291,7 @@ function rebuild(){
   const i=items.findIndex(a=>a.id===curId);
   if(i<0){show(0);restart()}else{cur=i;renderList()}
   const T=tpe().date;
-  const up=items.filter(a=>a.status==="open").slice(0,10).map(a=>`<b>${md(a.date)}</b>${esc(a.title)}`);
+  const up=items.filter(a=>a.status==="open"||a.status==="team").slice(0,10).map(a=>`<b>${md(a.date)}</b>${esc(a.title)}`);
   const txt=(up.length?up.join("<em>●</em>")+"<em>●</em>":"")+"新竹社會創新基地｜新竹縣竹北市中山路220號3樓（同心樓）<em>●</em>聯絡電話 03-5593142 分機 3529<em>●</em>活動報名請掃描畫面上的 QR code";
   const tk=$("tick");if(tk.dataset.k!==txt){tk.dataset.k=txt;tk.innerHTML=txt;tk.style.animationDuration=Math.max(30,tk.textContent.length*.35)+"s"}
 }
@@ -287,8 +315,11 @@ let busy=false;
 async function load(){
   if(busy)return;busy=true;
   try{
-    const r=await fetch(API,{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify({action:"list"})});
-    const j=await r.json();if(!j.ok)throw new Error(j.error);
+    const r=await fetch(API,{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify({action:"board"})});
+    let j=await r.json();
+    if(!j.ok&&/不支援/.test(j.error||"")){const r2=await fetch(API,{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify({action:"list"})});j=await r2.json()} // 後端還沒更新
+    if(!j.ok)throw new Error(j.error);
+    teams=(j.posts||[]).filter(p=>p.type==="團隊活動").map(toTeam);
     const oa=acts,oc=counts;
     acts=j.activities||[];counts=j.counts||{};
     rebuild();
