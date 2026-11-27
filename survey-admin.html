@@ -1,0 +1,643 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>線上問卷系統｜新竹社會創新基地</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=LXGW+WenKai+TC:wght@400;700&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="icon" type="image/svg+xml" href="logo-mark.svg">
+<link rel="stylesheet" href="style.css?v=20261124d">
+<style>
+  .qrbox{display:flex;flex-direction:column;align-items:center;gap:12px;text-align:center}
+  .qrbox .qr{width:min(260px,70vw);background:#fff;padding:14px;border-radius:12px;border:1px solid var(--line)}
+  .qrbox .qr svg{display:block;width:100%;height:auto}
+  .resp td.wrapc{white-space:pre-line;min-width:260px}
+  details.panel>summary{cursor:pointer;font-weight:700}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="brand">HSINCHU SOCIAL INNOVATION HUB</div>
+  </header>
+  <main>
+    <div class="hero">
+      <h1>線上<em>問卷</em>系統</h1>
+      <p>建立問卷、產生連結與 QR Code、查看統計結果。民眾、進駐團隊、內部都能用。</p>
+    </div>
+    <section id="body"></section>
+  </main>
+</div>
+
+<dialog id="dlg" aria-labelledby="dlg-title"><div class="dlg" id="dlg-body"></div></dialog>
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script src="config.js"></script>
+<script src="common.js"></script>
+<script src="qrcode.js"></script>
+<script>
+(function () {
+  "use strict";
+  var $ = U.$, esc = U.esc;
+  var S = { token: "", forms: [], fbs: [], surveyTpls: [], loaded: false, pick: "", aud: "", busy: false, charts: {} };
+  try { S.token = sessionStorage.getItem("must-admin") || ""; S.email = sessionStorage.getItem("must-admin-email") || ""; } catch (e) {}
+  S.cfg = null; // 登入方式（Google 或密碼），向後端問一次；和報名管理後台共用同一組帳號
+  var AUD = ["民眾", "進駐團隊", "內部"];
+
+  /* ---------- Google 帳號登入 ---------- */
+  function loadLoginCfg() {
+    U.api("loginConfig").then(function (j) { S.cfg = { clientId: j.clientId || "", password: !!j.password }; })
+      .catch(function () { S.cfg = { clientId: "", password: true }; }) // 舊版後端：沿用密碼登入
+      .then(function () { if (!S.token) render(); });
+  }
+  function gsiReady(cb) {
+    if (window.google && google.accounts && google.accounts.id) return cb();
+    var old = document.getElementById("gsi-js");
+    if (old) { old.addEventListener("load", cb); return; }
+    var sc = document.createElement("script");
+    sc.id = "gsi-js"; sc.src = "https://accounts.google.com/gsi/client"; sc.async = true;
+    sc.onload = cb;
+    sc.onerror = function () { var m = $("gsi-msg"); if (m) m.textContent = "Google 登入元件載入失敗，請檢查網路後重新整理。"; };
+    document.head.appendChild(sc);
+  }
+  function showGoogleBtn() {
+    gsiReady(function () {
+      var box = $("gsi-btn");
+      if (!box) return;
+      google.accounts.id.initialize({ client_id: S.cfg.clientId, callback: onGoogleCredential, ux_mode: "popup", auto_select: false });
+      google.accounts.id.renderButton(box, { theme: "outline", size: "large", text: "signin_with", shape: "pill", locale: "zh-TW", width: 280 });
+    });
+  }
+  function onGoogleCredential(resp) {
+    if (S.busy) return; S.busy = true;
+    var m = $("gsi-msg"); if (m) m.textContent = "驗證中…";
+    U.api("googleLogin", { credential: resp.credential }).then(function (j) {
+      S.token = j.token; S.email = j.email || "";
+      try { sessionStorage.setItem("must-admin", S.token); sessionStorage.setItem("must-admin-email", S.email); } catch (x) {}
+      render(); return load();
+    }).catch(function (x) { if (m) m.textContent = ""; U.toast(x.message); }).then(function () { S.busy = false; });
+  }
+
+
+  function actById(id) { for (var i = 0; i < S.forms.length; i++) if (S.forms[i].id === id) return S.forms[i]; return null; }
+  function fbFor(id) { return S.fbs.filter(function (f) { return f.formId === id; }).sort(function (a, b) { return (a.createdAt || "") < (b.createdAt || "") ? -1 : 1; }); }
+  function stText(f) { return f.open ? "開放中" : f.status === "closed" ? "已關閉" : "已截止"; }
+  function formLink(id) { return new URL("survey.html", location.href).href + "?id=" + encodeURIComponent(id); }
+
+  /* ---------- 回饋問卷編輯器 ---------- */
+  var QT = { single: "單選題", multi: "複選題", matrix: "評分表（多個項目用同一組選項評分）", text: "文字填答", slider: "拉桿（數字範圍）", note: "說明文字（不是題目）" };
+  var SCALE5 = ["非常滿意", "滿意", "普通", "不滿意", "非常不滿意"];
+  function rid(p) { return p + Math.random().toString(36).slice(2, 8); }
+  function newItem(type) {
+    var it = { id: rid(type === "note" ? "n" : "q"), type: type, title: "", required: type !== "text" && type !== "note" };
+    if (type === "single" || type === "multi") it.options = ["選項 1", "選項 2"];
+    if (type === "multi") { it.minSel = 1; it.maxSel = 2; }
+    if (type === "matrix") { it.options = SCALE5.slice(); it.rows = [{ id: rid("r"), label: "項目 1" }]; }
+    if (type === "slider") { it.min = 0; it.max = 100; }
+    if (type === "note") it.text = "";
+    return it;
+  }
+  function lines(v) { return String(v || "").split("\n").map(function (x) { return x.trim(); }).filter(Boolean); }
+  /* 把畫面上的輸入值寫回 S.ed.sv（只在需要時呼叫，避免打字時重畫） */
+  function edSync() {
+    var form = $("sv-form"); if (!form || !S.ed) return;
+    var sv = S.ed.sv;
+    sv.title = $("sv-title").value.trim(); sv.intro = $("sv-intro").value;
+    form.querySelectorAll("[data-i]").forEach(function (card) {
+      var it = sv.items[+card.dataset.i]; if (!it) return;
+      var get = function (k) { var el = card.querySelector('[data-qf="' + k + '"]'); return el ? (el.type === "checkbox" ? el.checked : el.value) : undefined; };
+      if (it.type === "note") { it.text = get("text"); return; }
+      it.title = get("title").trim(); it.required = get("required");
+      if (it.type === "single" || it.type === "multi" || it.type === "matrix") it.options = lines(get("options"));
+      if (it.type === "multi") { it.minSel = parseInt(get("minSel"), 10) || 1; it.maxSel = parseInt(get("maxSel"), 10) || it.options.length; }
+      if (it.type === "matrix") it.rows = lines(get("rows")).map(function (label, k) { return { id: (it.rows[k] && it.rows[k].id) || rid("r"), label: label }; });
+      if (it.type === "slider") { it.min = parseInt(get("min"), 10) || 0; it.max = parseInt(get("max"), 10); }
+    });
+  }
+  function edSyncAll() {
+    edSync();
+    if (!S.ed || !$("sv-aud")) return;
+    S.ed.form.audience = $("sv-aud").value; S.ed.form.status = $("sv-status").value; S.ed.form.deadline = $("sv-deadline").value;
+  }
+  function renderSurvey(focusIdx) {
+    var fm = S.ed.form, sv = S.ed.sv, nfb = fm.id ? fbFor(fm.id).length : 0, n = 0;
+    var tf = function (k, label, val, extra) { return '<label class="f"><span>' + label + '</span><input type="text" data-qf="' + k + '" value="' + esc(val == null ? "" : val) + '"' + (extra || "") + "></label>"; };
+    var ta = function (k, label, val, rows) { return '<label class="f"><span>' + label + '</span><textarea data-qf="' + k + '" rows="' + (rows || 4) + '">' + esc(val) + "</textarea></label>"; };
+    var num = function (k, label, val) { return '<label class="f"><span>' + label + '</span><input type="number" data-qf="' + k + '" value="' + esc(val) + '"></label>'; };
+    var h = U.head(fm.id ? "編輯問卷" : "新增問卷") + '<form id="sv-form" class="survey" novalidate>' +
+      (nfb ? '<div class="warn">這份問卷已經收到 ' + nfb + " 份回覆。修改後舊的回答都會保留，但刪除或改過的題目，舊回答可能對不上。</div>" : "") +
+      '<div class="f"><span>套用問卷範本（會取代下面全部題目）</span><div class="row"><select id="sv-tpl" style="flex:1 1 200px"><option value="">選擇範本…</option><option value="__default">預設：課程滿意度調查</option>' +
+      S.surveyTpls.map(function (x) { return '<option value="' + esc(x.id) + '">' + esc(x.name) + "</option>"; }).join("") +
+      '</select><button class="btn ghost sm" type="button" data-svapply>套用</button><button class="btn danger sm" type="button" data-svdeltpl>刪除範本</button></div></div>' +
+      '<div class="grid2"><label class="f" for="sv-aud"><span>給誰填</span><select id="sv-aud">' + AUD.map(function (x) { return '<option' + (fm.audience === x ? " selected" : "") + ">" + x + "</option>"; }).join("") + "</select></label>" +
+      '<label class="f" for="sv-status"><span>狀態</span><select id="sv-status"><option value="open"' + (fm.status !== "closed" ? " selected" : "") + '>開放填寫</option><option value="closed"' + (fm.status === "closed" ? " selected" : "") + ">關閉</option></select></label></div>" +
+      '<label class="f" for="sv-deadline"><span>截止日期（可不填；這天過後自動關閉）</span><input type="date" id="sv-deadline" value="' + esc(fm.deadline || "") + '"></label>' +
+      '<label class="f" for="sv-title"><span>問卷標題 <i>*</i></span><input type="text" id="sv-title" maxlength="100" value="' + esc(sv.title) + '"></label>' +
+      '<label class="f" for="sv-intro"><span>問卷說明（顯示在題目上方）</span><textarea id="sv-intro" rows="3" maxlength="2000">' + esc(sv.intro || "") + "</textarea></label>";
+    sv.items.forEach(function (it, i) {
+      var label = it.type === "note" ? "說明文字" : "第 " + (++n) + " 題";
+      h += '<div class="qcard" data-i="' + i + '"><div class="qhead"><b>' + label + "</b><span class=\"cnt\">" + QT[it.type] + "</span>" +
+        '<span class="qtools"><button class="btn ghost sm" type="button" data-qmove="-1" aria-label="上移"' + (i ? "" : " disabled") + ">↑</button>" +
+        '<button class="btn ghost sm" type="button" data-qmove="1" aria-label="下移"' + (i < sv.items.length - 1 ? "" : " disabled") + ">↓</button>" +
+        '<button class="btn danger sm" type="button" data-qdel>刪除</button></span></div>';
+      if (it.type === "note") h += ta("text", "說明內容", it.text, 3);
+      else {
+        h += tf("title", "題目", it.title, ' maxlength="200"') +
+          '<label class="chk"><input type="checkbox" data-qf="required"' + (it.required ? " checked" : "") + "> 必填</label>";
+        if (it.type === "single" || it.type === "multi") h += ta("options", "選項（一行一個）", (it.options || []).join("\n"), Math.min(10, (it.options || []).length + 1));
+        if (it.type === "multi") h += '<div class="grid2">' + num("minSel", "最少選幾項", it.minSel) + num("maxSel", "最多選幾項", it.maxSel) + "</div>";
+        if (it.type === "matrix") h += ta("rows", "評分項目（一行一個）", (it.rows || []).map(function (r) { return r.label; }).join("\n"), Math.min(8, (it.rows || []).length + 1)) +
+          ta("options", "評分選項（一行一個，第一個分數最高）", (it.options || []).join("\n"), Math.min(8, (it.options || []).length + 1));
+        if (it.type === "slider") h += '<div class="grid2">' + num("min", "最小值", it.min) + num("max", "最大值", it.max) + "</div>";
+      }
+      h += "</div>";
+    });
+    h += '<div class="f"><span>新增題目</span><div class="row">' + Object.keys(QT).map(function (k) { return '<button class="btn ghost sm" type="button" data-qadd="' + k + '">＋ ' + QT[k].replace(/（.*）/, "") + "</button>"; }).join("") + "</div></div>" +
+      '<div class="row"><input type="text" id="sv-tplname" maxlength="40" placeholder="範本名稱，例如：工作坊回饋" aria-label="範本名稱" style="flex:1 1 200px"><button class="btn ghost sm" type="button" data-svtpl>另存為問卷範本</button></div>' +
+      '<div class="row"><button class="btn" type="button" data-svsave>儲存問卷</button><button class="btn ghost" type="button" data-close>取消</button></div></form>';
+    U.showDlg(h);
+    if (focusIdx != null) { var c = document.querySelector('[data-i="' + focusIdx + '"]'); if (c) { c.scrollIntoView({ block: "center" }); var inp = c.querySelector("input,textarea"); if (inp) inp.focus(); } }
+  }
+  function openEdit(id, dup) {
+    var f = actById(id);
+    if (f && !dup) S.ed = { form: { id: f.id, audience: f.audience, status: f.status, deadline: f.deadline }, sv: JSON.parse(JSON.stringify(f.survey)) };
+    else if (f) { var c = JSON.parse(JSON.stringify(f.survey)); c.title = c.title + "（複製）"; S.ed = { form: { audience: f.audience, status: "open", deadline: "" }, sv: c }; }
+    else S.ed = { form: { audience: S.aud || "民眾", status: "open", deadline: "" }, sv: { title: "", intro: "", items: [newItem("single")] } };
+    renderSurvey();
+  }
+  function svCall(p, okMsg, reopen, after) {
+    if (S.busy) return;
+    S.busy = true;
+    var keep = S.ed;
+    p.then(function (j) {
+      U.toast(okMsg);
+      return load().then(function () {
+        if (reopen && keep) { S.ed = keep; renderSurvey(); }
+        else { U.closeDlg(); if (after) after(j); }
+      });
+    }).catch(function (e) { if (e.code !== "auth") U.toast(e.message); })
+      .then(function () { S.busy = false; });
+  }
+  document.addEventListener("change", function (e) {
+    if (!S.ed || !e.target.closest || !e.target.closest("#sv-form")) return;
+    if (e.target.dataset.qf === "required") edSync();
+  });
+
+  function avg(list) { return list.length ? list.reduce(function (a, b) { return a + b; }, 0) / list.length : null; }
+  function ansOf(f, key) { return (f.answers || {})[key]; }
+  function median(list) {
+    if (!list.length) return null;
+    var a = list.slice().sort(function (x, y) { return x - y; }), m = Math.floor(a.length / 2);
+    return a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2;
+  }
+  /* 「滿意」＝ 評分題前兩個選項（例如 非常滿意、滿意）；選項少於 4 個時只算第一個 */
+  function topN(options) { return options.length >= 4 ? 2 : 1; }
+  function isSat(options, v) { var i = options.indexOf(v); return i >= 0 && i < topN(options); }
+  /* 成果報告用的整體指標：整體滿意度、各構面平均、整體平均、拉桿題平均與中位數 */
+  function fbKpi(fs, sv) {
+    var tot = 0, sat = 0, allSc = [], groups = [], sliders = [];
+    sv.items.forEach(function (it) {
+      if (it.type === "matrix") {
+        var g = [];
+        it.rows.forEach(function (rw) {
+          fs.forEach(function (f) {
+            var v = ansOf(f, rw.id), sc = U.scoreOf(it.options, v);
+            if (!sc) return;
+            tot++; if (isSat(it.options, v)) sat++;
+            var s5 = sc / it.options.length * 5; g.push(s5); allSc.push(s5);
+          });
+        });
+        groups.push({ title: it.title.replace(/[：:]$/, ""), avg: avg(g), n: it.rows.length });
+      } else if (it.type === "slider") {
+        var vals = fs.map(function (f) { var v = ansOf(f, it.id); return v === "" || v == null ? null : +v; }).filter(function (v) { return v != null && !isNaN(v); });
+        sliders.push({ title: it.title.replace(/[：:]$/, ""), min: it.min, max: it.max, avg: avg(vals), median: median(vals), n: vals.length });
+      }
+    });
+    return { satPct: tot ? sat / tot : null, overall: avg(allSc), groups: groups, sliders: sliders,
+      items: groups.reduce(function (a, g) { return a + g.n; }, 0) };
+  }
+  function pct(c, n) { return n ? Math.round(c / n * 1000) / 10 + "%" : "0%"; }
+  function round2(x) { return x == null ? "" : Math.round(x * 100) / 100; }
+
+  /* 回饋分析表：每題每個選項的人數、比例、平均分數，匯出 Excel 用 */
+  function fbAnalysisRows(id) {
+    var fs = fbFor(id), act = actById(id), sv = act.survey, n = 0;
+    var rows = [["問卷", sv.title], ["對象", act.audience], ["狀態", stText(act)], ["有效問卷", fs.length], ["匯出時間", U.ftime(new Date().toISOString())]];
+    var K = fbKpi(fs, sv);
+    if (K.groups.length) {
+      rows.push(["整體滿意度（非常滿意＋滿意）", K.satPct == null ? "" : Math.round(K.satPct * 1000) / 10 + "%"]);
+      K.groups.forEach(function (g) { rows.push([g.title + " 平均（滿分 5）", round2(g.avg)]); });
+      rows.push(["整體平均（滿分 5，" + K.items + " 項細項）", round2(K.overall)]);
+    }
+    K.sliders.forEach(function (x) { rows.push([x.title + " 平均（滿分 " + x.max + "）", round2(x.avg)], [x.title + " 中位數", round2(x.median)]); });
+    rows = rows.concat([[],
+      ["題號", "題目", "項目／選項", "人數", "比例", "平均分數"]]);
+    sv.items.forEach(function (it) {
+      if (it.type === "note") return;
+      n++;
+      var title = it.title.replace(/[：:]$/, "");
+      if (it.type === "single" || it.type === "multi") {
+        var answered = fs.filter(function (f) { var v = ansOf(f, it.id); return Array.isArray(v) ? v.length : v; }).length;
+        it.options.forEach(function (o) {
+          var c = fs.filter(function (f) { var v = ansOf(f, it.id); return Array.isArray(v) ? v.indexOf(o) >= 0 : v === o; }).length;
+          rows.push([n, title + (it.type === "multi" ? "（複選）" : ""), o, c, pct(c, answered), ""]);
+        });
+      } else if (it.type === "matrix") {
+        it.rows.forEach(function (rw) {
+          var sc = fs.map(function (f) { return U.scoreOf(it.options, ansOf(f, rw.id)); }).filter(Boolean);
+          var st = fs.filter(function (f) { return isSat(it.options, ansOf(f, rw.id)); }).length;
+          rows.push([n, title + "－" + rw.label, "平均（滿分 " + it.options.length + "）／滿意比例", sc.length, pct(st, sc.length), round2(avg(sc))]);
+          it.options.forEach(function (o) {
+            var c = fs.filter(function (f) { return ansOf(f, rw.id) === o; }).length;
+            rows.push([n, title + "－" + rw.label, o, c, pct(c, fs.length), ""]);
+          });
+        });
+      } else if (it.type === "slider") {
+        var vals = fs.map(function (f) { var v = ansOf(f, it.id); return v === "" || v == null ? null : +v; }).filter(function (v) { return v != null && !isNaN(v); });
+        rows.push([n, title, "平均（" + it.min + "～" + it.max + "）", vals.length, "", round2(avg(vals))]);
+        rows.push([n, title, "中位數", "", "", round2(median(vals))]);
+        if (vals.length) { rows.push([n, title, "最低", "", "", Math.min.apply(null, vals)]); rows.push([n, title, "最高", "", "", Math.max.apply(null, vals)]); }
+      } else if (it.type === "text") {
+        fs.forEach(function (f) { var v = String(ansOf(f, it.id) || "").trim(); if (v) rows.push([n, title, v, "", "", ""]); });
+      }
+    });
+    return rows;
+  }
+
+  /* Excel 匯出：需要時才載入 SheetJS */
+  var xlsxReady;
+  function withXLSX() {
+    if (window.XLSX) return Promise.resolve(window.XLSX);
+    if (!xlsxReady) xlsxReady = new Promise(function (ok, no) {
+      var sc = document.createElement("script");
+      sc.src = "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
+      sc.onload = function () { ok(window.XLSX); };
+      sc.onerror = function () { xlsxReady = null; no(new Error("Excel 元件載入失敗，請檢查網路後再試，或改用 CSV。")); };
+      document.head.appendChild(sc);
+    });
+    return xlsxReady;
+  }
+  function sheetName(t, used) {
+    var b = String(t || "活動").replace(/[\\\/\?\*\[\]:]/g, "").slice(0, 28) || "活動", n = b, i = 2;
+    while (used[n]) n = b.slice(0, 25) + "(" + i++ + ")";
+    used[n] = 1; return n;
+  }
+  function saveXLSX(sheets, name) {
+    return withXLSX().then(function (X) {
+      var wb = X.utils.book_new(), used = {};
+      sheets.forEach(function (sh) {
+        var ws = X.utils.aoa_to_sheet(sh.rows);
+        ws["!cols"] = (sh.cols || []).map(function (w) { return { wch: w }; });
+        X.utils.book_append_sheet(wb, ws, sheetName(sh.name, used));
+      });
+      var data = X.write(wb, { bookType: "xlsx", type: "array" });
+      saveBlob(new Blob([data], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), name + ".xlsx");
+    }).catch(function (e) { U.toast(e.message); });
+  }
+
+  /* ---------- 圖表（SVG 橫條圖，可下載成 PNG） ---------- */
+  S.charts = {};
+  var PAL_SCREEN = { bar: "var(--accent)", ink: "var(--ink)", muted: "var(--muted)", line: "var(--line)", bg: "none" };
+  var PAL_PNG = { bar: "#0f6b5c", ink: "#14302b", muted: "#566b65", line: "#d3dcd6", bg: "#ffffff" };
+  function textW(t, size) { var w = 0; String(t).split("").forEach(function (c) { w += /[\u0000-ÿ]/.test(c) ? size * 0.58 : size; }); return w; }
+  function fitText(t, size, maxW) { t = String(t); if (textW(t, size) <= maxW) return t; while (t.length > 1 && textW(t + "…", size) > maxW) t = t.slice(0, -1); return t + "…"; }
+  function chartSVG(c, P) {
+    var W = 640, fs = 13, rowH = 32, barH = 18, top = 44, padR = 96;
+    var labW = Math.min(240, Math.max(60, Math.max.apply(null, c.rows.map(function (r) { return textW(r.label, fs); })) + 8));
+    var x0 = 16 + labW + 8, plotW = W - x0 - padR, H = top + c.rows.length * rowH + 16;
+    var max = c.max || Math.max.apply(null, c.rows.map(function (r) { return r.value; }).concat([1]));
+    var o = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + " " + H + '" width="' + W + '" height="' + H + '" font-family="Noto Sans TC, PingFang TC, Microsoft JhengHei, sans-serif" role="img" aria-label="' + esc(c.title) + '">' +
+      (P.bg !== "none" ? '<rect width="' + W + '" height="' + H + '" fill="' + P.bg + '"/>' : "") +
+      '<text x="16" y="26" font-size="15" font-weight="700" fill="' + P.ink + '">' + esc(fitText(c.title, 15, W - 32)) + "</text>" +
+      '<line x1="' + x0 + '" y1="' + (top - 6) + '" x2="' + x0 + '" y2="' + (H - 12) + '" stroke="' + P.line + '" stroke-width="1"/>';
+    c.rows.forEach(function (r, i) {
+      var y = top + i * rowH, w = max ? Math.max(0, r.value / max * plotW) : 0, by = y + (rowH - barH) / 2 - 4;
+      o += "<g><title>" + esc(r.label + "：" + r.text) + "</title>" +
+        '<rect x="0" y="' + (y - 4) + '" width="' + W + '" height="' + rowH + '" fill="transparent"/>' +
+        '<text x="' + (x0 - 8) + '" y="' + (by + barH / 2 + 4.5) + '" font-size="' + fs + '" text-anchor="end" fill="' + P.ink + '">' + esc(fitText(r.label, fs, labW)) + "</text>" +
+        (w > 0 ? '<path d="M' + x0 + " " + by + "h" + Math.max(0, w - 4) + "a4 4 0 0 1 4 4v" + (barH - 8) + "a4 4 0 0 1 -4 4h" + (-Math.max(0, w - 4)) + 'z" fill="' + P.bar + '"/>' : "") +
+        '<text x="' + (x0 + w + 6) + '" y="' + (by + barH / 2 + 4.5) + '" font-size="12" fill="' + P.muted + '">' + esc(r.text) + "</text></g>";
+    });
+    return o + "</svg>";
+  }
+  function chartBox(key, c) {
+    S.charts[key] = c;
+    return '<figure class="chart"><div class="chart-svg">' + chartSVG(c, PAL_SCREEN) + "</div>" +
+      '<figcaption class="noprint"><button class="btn ghost sm" type="button" data-chartpng="' + esc(key) + '">下載圖表 PNG</button></figcaption></figure>';
+  }
+  function chartPNG(key) {
+    var c = S.charts[key]; if (!c) return Promise.resolve();
+    var svg = chartSVG(c, PAL_PNG), m = /width="(\d+)" height="(\d+)"/.exec(svg), w = +m[1], h = +m[2], k = 2;
+    return new Promise(function (ok) {
+      var img = new Image();
+      img.onload = function () {
+        var cv = document.createElement("canvas"); cv.width = w * k; cv.height = h * k;
+        var g = cv.getContext("2d"); g.scale(k, k); g.drawImage(img, 0, 0);
+        cv.toBlob(function (b) { saveBlob(b, (c.file || c.title) + ".png"); ok(); }, "image/png");
+      };
+      img.onerror = function () { U.toast("圖表轉檔失敗，請改用列印存成 PDF。"); ok(); };
+      img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
+    });
+  }
+  function allChartsPNG(prefix) {
+    var keys = Object.keys(S.charts).filter(function (k) { return k.indexOf(prefix) === 0; }), i = 0;
+    if (!keys.length) { U.toast("目前沒有圖表可以下載。"); return; }
+    U.toast("開始下載 " + keys.length + " 張圖表，瀏覽器如果詢問，請選「允許」下載多個檔案。");
+    (function next() { if (i >= keys.length) return; chartPNG(keys[i++]).then(function () { setTimeout(next, 350); }); })();
+  }
+  function fbReport(id) {
+    var fs = fbFor(id), act = actById(id), sv = act.survey, fields = U.surveyFields(sv), tt = act.title || "問卷";
+    S.charts = {};
+    var h = '<div class="panel sv-block" style="margin-bottom:14px"><h4>' + esc(sv.title) + ' <span class="pill ' + (act.open ? "open" : "closed") + '">' + stText(act) + '</span> <span class="cnt">' + esc(act.audience) + "</span></h4>" +
+      '<p class="note">' + (act.open ? "目前開放填寫，可以把連結貼到 LINE 群組，或下載 QR Code 放在現場。" : "問卷已關閉，連結打開會顯示「已關閉」。要再開放，請按「編輯問卷」把狀態改回開放、或延後截止日期。") + "</p>" +
+      '<div class="linkbox"><code>' + esc(formLink(id)) + '</code><button class="btn ghost sm" type="button" data-copylink="' + esc(id) + '">複製連結</button>' +
+      '<button class="btn ghost sm" type="button" data-qr="' + esc(id) + '">QR Code</button><a class="btn ghost sm" href="' + esc(formLink(id)) + '" target="_blank" rel="noopener">開啟</a>' +
+      '<button class="btn sm" type="button" data-edit="' + esc(id) + '">編輯問卷</button></div></div>';
+    if (!fs.length) return h + '<div class="panel"><p class="note">這份問卷還沒有人填寫。</p></div>';
+
+    var scales = fields.filter(function (x) { return x.type === "scale"; }), all = [], ns = {};
+    scales.forEach(function (x) { ns[x.options.length] = 1; fs.forEach(function (f) { var sc = U.scoreOf(x.options, ansOf(f, x.key)); if (sc) all.push(sc); }); });
+    var nsKeys = Object.keys(ns);
+    var K = fbKpi(fs, sv);
+    h += '<div class="panel stat"><div><b>' + fs.length + '</b> 份<br><span class="cnt">有效問卷</span></div>' +
+      (K.satPct != null ? "<div><b>" + Math.round(K.satPct * 1000) / 10 + '%</b><br><span class="cnt">整體滿意度</span></div>' : "") +
+      (K.overall != null ? "<div><b>" + K.overall.toFixed(2) + '</b> / 5<br><span class="cnt">整體平均</span></div>' :
+        (scales.length && nsKeys.length === 1 ? "<div><b>" + (all.length ? avg(all).toFixed(2) : "—") + "</b> / " + nsKeys[0] + '<br><span class="cnt">評分題平均</span></div>' : "")) +
+      K.sliders.filter(function (x) { return x.n; }).map(function (x) { return "<div><b>" + round2(x.avg) + "</b> / " + x.max + '<br><span class="cnt">' + esc(x.title) + " 平均（中位數 " + round2(x.median) + "）</span></div>"; }).join("") +
+      '<div class="row noprint" style="margin-left:auto"><button class="btn sm" type="button" data-fbxlsx>下載分析報表（Excel）</button><button class="btn ghost sm" type="button" data-allcharts="fb-">下載全部圖表</button><button class="btn ghost sm" type="button" data-fbcsv>下載原始回答 CSV</button><button class="btn ghost sm" type="button" data-fbprint>列印／存成 PDF</button></div></div>';
+    if (K.groups.length) h += '<div class="panel sv-block" style="margin-top:12px"><h4>滿意度統計摘要</h4>' +
+      '<div class="scroll"><table class="mtable"><thead><tr><th>構面</th><th class="num">細項數</th><th class="num">平均分數（滿分 5）</th></tr></thead><tbody>' +
+      K.groups.map(function (g) { return "<tr><td>" + esc(g.title) + '</td><td class="num">' + g.n + '</td><td class="num"><strong>' + (g.avg == null ? "—" : g.avg.toFixed(2)) + "</strong></td></tr>"; }).join("") +
+      '<tr><td><strong>整體平均</strong></td><td class="num">' + K.items + '</td><td class="num"><strong>' + (K.overall == null ? "—" : K.overall.toFixed(2)) + "</strong></td></tr></tbody></table></div>" +
+      chartBox("fb-0-summary", { title: "各構面平均分數（滿分 5）", file: tt + "-各構面平均", max: 5,
+        rows: K.groups.map(function (g) { return { label: g.title, value: g.avg || 0, text: g.avg == null ? "—" : g.avg.toFixed(2) }; })
+          .concat([{ label: "整體平均", value: K.overall || 0, text: K.overall == null ? "—" : K.overall.toFixed(2) }]) }) +
+      '<p class="note">本次回收有效問卷 ' + fs.length + " 份，" + K.groups.length + " 大構面、" + K.items + " 項細項指標；整體滿意度（勾選「" + "非常滿意」或「滿意」的比例）" +
+      (K.satPct == null ? "—" : Math.round(K.satPct * 1000) / 10 + "%") + "，整體平均 " + (K.overall == null ? "—" : K.overall.toFixed(2)) + " 分" +
+      K.sliders.filter(function (x) { return x.n; }).map(function (x) { return "；" + esc(x.title) + "平均 " + round2(x.avg) + " 分（滿分 " + x.max + "），中位數 " + round2(x.median) + " 分"; }).join("") + "。</p></div>";
+
+    var n = 0;
+    sv.items.forEach(function (it) {
+      if (it.type === "note") return;
+      n++;
+      h += '<div class="panel sv-block" style="margin-top:12px"><h4>' + n + ". " + esc(it.title.replace(/[：:]$/, "")) + "</h4>";
+      if (it.type === "single" || it.type === "multi") {
+        var answered = fs.filter(function (f) { var v = ansOf(f, it.id); return Array.isArray(v) ? v.length : v; }).length || 1;
+        h += chartBox("fb-" + n, { title: n + ". " + it.title.replace(/[：:]$/, "") + "（n=" + fs.filter(function (f) { var v = ansOf(f, it.id); return Array.isArray(v) ? v.length : v; }).length + "）", file: tt + "-第" + n + "題", max: answered,
+          rows: it.options.map(function (o) {
+            var c = fs.filter(function (f) { var v = ansOf(f, it.id); return Array.isArray(v) ? v.indexOf(o) >= 0 : v === o; }).length;
+            return { label: o, value: c, text: c + "（" + pct(c, answered) + "）" };
+          }) }) + (it.type === "multi" ? '<p class="note">複選題，長條是選這項的人占作答人數的比例。</p>' : "");
+      } else if (it.type === "matrix") {
+        h += chartBox("fb-" + n, { title: n + ". " + it.title.replace(/[：:]$/, "") + "：各項平均（滿分 " + it.options.length + "）", file: tt + "-第" + n + "題", max: it.options.length,
+          rows: it.rows.map(function (rw) {
+            var sc = fs.map(function (f) { return U.scoreOf(it.options, ansOf(f, rw.id)); }).filter(Boolean), a = avg(sc);
+            return { label: rw.label, value: a || 0, text: a == null ? "—" : a.toFixed(2) };
+          }) });
+        h += '<div class="scroll"><table class="mtable"><thead><tr><th>項目</th><th class="num">平均</th><th class="num">滿意比例</th>' + it.options.map(function (o) { return '<th class="num">' + esc(o) + "</th>"; }).join("") + "</tr></thead><tbody>" +
+          it.rows.map(function (r) {
+            var sc = fs.map(function (f) { return U.scoreOf(it.options, ansOf(f, r.id)); }).filter(Boolean);
+            var st = fs.filter(function (f) { return isSat(it.options, ansOf(f, r.id)); }).length;
+            return "<tr><td>" + esc(r.label) + '</td><td class="num"><strong>' + (sc.length ? avg(sc).toFixed(2) : "—") + '</strong></td><td class="num">' + pct(st, sc.length) + "</td>" +
+              it.options.map(function (o) { var c = fs.filter(function (f) { return ansOf(f, r.id) === o; }).length; return '<td class="num">' + c + '<br><span class="cnt">' + pct(c, fs.length) + "</span></td>"; }).join("") + "</tr>";
+          }).join("") + '</tbody></table></div><p class="note">平均分數：「' + esc(it.options[0]) + "」" + it.options.length + " 分，「" + esc(it.options[it.options.length - 1]) + "」1 分。</p>";
+      } else if (it.type === "slider") {
+        var vals = fs.map(function (f) { var v = ansOf(f, it.id); return v === "" || v == null ? null : +v; }).filter(function (v) { return v != null && !isNaN(v); });
+        if (vals.length) {
+          var bins = 5, step = (it.max - it.min) / bins;
+          h += chartBox("fb-" + n, { title: n + ". " + it.title.replace(/[：:]$/, "") + "：分數分布（n=" + vals.length + "）", file: tt + "-第" + n + "題", max: vals.length,
+            rows: Array.apply(null, Array(bins)).map(function (_, b) {
+              var lo = it.min + step * b, hi = b === bins - 1 ? it.max : it.min + step * (b + 1);
+              var c = vals.filter(function (v) { return v >= lo && (b === bins - 1 ? v <= hi : v < hi); }).length;
+              return { label: Math.round(lo) + "–" + Math.round(hi) + " 分", value: c, text: c + " 人（" + pct(c, vals.length) + "）" };
+            }).reverse() });
+        }
+        h += vals.length ? '<p style="margin:0">平均 <strong>' + Math.round(avg(vals) * 10) / 10 + "</strong>（" + it.min + "～" + it.max + "），中位數 " + round2(median(vals)) + "，最低 " + Math.min.apply(null, vals) + "，最高 " + Math.max.apply(null, vals) + "</p>" : '<p class="note">沒有資料</p>';
+      } else if (it.type === "text") {
+        var ts = fs.filter(function (f) { return String(ansOf(f, it.id) || "").trim(); });
+        h += ts.length ? '<div class="list">' + ts.map(function (f) { return '<div class="fbitem"><span class="cnt">' + esc(U.ftime(f.createdAt)) + "</span><p>" + esc(ansOf(f, it.id)) + "</p></div>"; }).join("") + "</div>" : '<p class="note">沒有人填寫</p>';
+      }
+      h += "</div>";
+    });
+    return h + respList(id);
+  }
+
+  /* 每一份回覆（可刪除測試填寫的資料） */
+  function respList(id) {
+    var fs = fbFor(id), fields = U.surveyFields(actById(id).survey);
+    return '<details class="panel noprint" style="margin-top:12px"><summary>每一份回覆（' + fs.length + " 份）</summary>" +
+      '<div class="scroll" style="margin-top:10px"><table class="mtable resp"><thead><tr><th>#</th><th>填寫時間</th><th>回答內容</th><th></th></tr></thead><tbody>' +
+      fs.map(function (f, i) {
+        var txt = fields.map(function (x) { var v = ansOf(f, x.key); v = Array.isArray(v) ? v.join("、") : v; return v === "" || v == null ? "" : (x.group ? x.group + "－" : "") + x.head + "：" + v; }).filter(Boolean).join("\n");
+        return "<tr><td>" + (i + 1) + "</td><td>" + esc(U.ftime(f.createdAt)) + '</td><td class="wrapc">' + esc(txt) + '</td><td><button class="btn danger sm" type="button" data-rmresp="' + esc(f.id) + '">刪除</button></td></tr>';
+      }).join("") + "</tbody></table></div></details>";
+  }
+
+  /* ---------- QR Code ---------- */
+  function qrSvg(text) { var q = qrcode(0, "M"); q.addData(unescape(encodeURIComponent(text))); q.make(); return q.createSvgTag({ cellSize: 4, margin: 0, scalable: true }); }
+  function openQr(id) {
+    var f = actById(id); if (!f) return;
+    U.showDlg(U.head("QR Code：" + f.title) + '<div class="qrbox"><div class="qr">' + qrSvg(formLink(id)) + '</div><code style="overflow-wrap:anywhere;font-size:.8125rem">' + esc(formLink(id)) + "</code>" +
+      '<div class="row" style="justify-content:center"><button class="btn" type="button" data-qrpng="' + esc(id) + '">下載 QR Code 圖片</button><button class="btn ghost" type="button" data-copylink="' + esc(id) + '">複製連結</button></div>' +
+      '<p class="note">圖片會附上問卷標題，可以直接印出來放在現場或貼到簡報。</p></div>');
+  }
+  /* 白底 PNG：上方問卷標題、中間 QR Code、下方「掃描填寫問卷」 */
+  function qrPng(id) {
+    var f = actById(id); if (!f) return;
+    var q = qrcode(0, "M"); q.addData(unescape(encodeURIComponent(formLink(id)))); q.make();
+    var n = q.getModuleCount(), cell = Math.floor(720 / n), size = cell * n, W = size + 160, top = 150, H = top + size + 130;
+    var cv = document.createElement("canvas"); cv.width = W; cv.height = H;
+    var g = cv.getContext("2d");
+    g.fillStyle = "#fff"; g.fillRect(0, 0, W, H);
+    g.fillStyle = "#14302b"; g.textAlign = "center"; g.textBaseline = "middle";
+    g.font = "700 44px 'Noto Sans TC','PingFang TC','Microsoft JhengHei',sans-serif";
+    var title = f.title; while (title.length > 1 && g.measureText(title).width > W - 80) title = title.slice(0, -1);
+    g.fillText(title === f.title ? title : title.slice(0, -1) + "…", W / 2, 80);
+    for (var r = 0; r < n; r++) for (var c = 0; c < n; c++) if (q.isDark(r, c)) g.fillRect(80 + c * cell, top + r * cell, cell, cell);
+    g.fillStyle = "#566b65"; g.font = "500 32px 'Noto Sans TC','PingFang TC','Microsoft JhengHei',sans-serif";
+    g.fillText("掃描 QR Code 填寫問卷", W / 2, top + size + 60);
+    cv.toBlob(function (b) { saveBlob(b, "QR-" + f.title + ".png"); }, "image/png");
+  }
+
+  function logout(msg) {
+    S.token = ""; S.email = ""; S.loaded = false;
+    try { sessionStorage.removeItem("must-admin"); sessionStorage.removeItem("must-admin-email"); } catch (e) {}
+    try { if (window.google && google.accounts && google.accounts.id) google.accounts.id.disableAutoSelect(); } catch (e) {}
+    render(); if (msg) U.toast(msg);
+  }
+  function call(action, data) {
+    return U.api(action, Object.assign({ token: S.token }, data || {})).catch(function (e) {
+      if (e.code === "auth") logout(e.message);
+      throw e;
+    });
+  }
+  function load() {
+    return call("formsAdmin").then(function (j) {
+      S.forms = (j.forms || []).sort(function (a, b) { return (a.createdAt || "") < (b.createdAt || "") ? 1 : -1; });
+      S.fbs = j.responses || []; S.surveyTpls = j.surveyTemplates || [];
+      S.loaded = true; render();
+    }).catch(function (e) {
+      if (e.code === "auth") return;
+      $("body").innerHTML = '<div class="panel"><p><strong>' + esc(e.message) + "</strong></p>" +
+        (/不支援/.test(e.message) ? '<p class="note">後端程式碼還沒更新：請把新版 Code.gs 貼到「報名系統程式碼」試算表的 Apps Script，並重新部署（管理部署作業 → 鉛筆 → 新版本 → 部署）。</p>' : "") + "</div>";
+    });
+  }
+  function go(id) {
+    S.pick = id || "";
+    try { history.replaceState(null, "", id ? "#" + id : location.pathname + location.search); } catch (e) {}
+    render(); window.scrollTo({ top: 0 });
+  }
+
+  function render() {
+    var el = $("body");
+    if (!U.configured()) { el.innerHTML = U.SETUP_NOTE; return; }
+    if (!S.token) {
+      if (!S.cfg) { el.innerHTML = '<div class="panel login"><p class="note">載入中…</p></div>'; return; }
+      if (S.cfg.clientId) {
+        el.innerHTML = '<div class="panel login"><h3 style="margin-top:0">後台登入</h3><div id="gsi-btn" style="min-height:44px"></div>' +
+          '<p class="note" id="gsi-msg" aria-live="polite"></p><p class="note">請用已加入「後台帳號」名單的 Google 帳號登入（和報名管理後台同一組）。</p></div>';
+        showGoogleBtn();
+        return;
+      }
+      el.innerHTML = '<form id="login-form" class="panel login">' + U.fld("pw", "後台密碼", "", true, "password", ' autocomplete="current-password"') +
+        '<button class="btn" type="submit">登入</button><p class="note">和報名管理後台同一組密碼（Google 試算表「設定」工作表的 B1）。</p></form>';
+      return;
+    }
+    if (!S.loaded) { el.innerHTML = '<div class="panel"><p class="note">載入中…</p></div>'; return; }
+    if (S.pick && !actById(S.pick)) S.pick = "";
+    var h = '<div class="tabs" role="tablist">';
+    if (S.pick) h += '<button type="button" data-back>← 回問卷列表</button>';
+    else h += [["", "全部"]].concat(AUD.map(function (x) { return [x, x]; })).map(function (t) {
+      var c = t[0] ? S.forms.filter(function (f) { return f.audience === t[0]; }).length : S.forms.length;
+      return '<button type="button" role="tab" aria-selected="' + (S.aud === t[0]) + '" data-aud="' + esc(t[0]) + '">' + t[1] + "（" + c + "）</button>";
+    }).join("");
+    h += (S.email ? '<span class="cnt" style="margin-left:auto;align-self:center" title="目前登入的帳號">' + esc(S.email) + "</span>" : "") +
+      '<button type="button" data-logout' + (S.email ? "" : ' style="margin-left:auto"') + ">登出</button></div>";
+
+    if (S.pick) { el.innerHTML = h + fbReport(S.pick); return; }
+    var list = S.forms.filter(function (f) { return !S.aud || f.audience === S.aud; });
+    h += '<div class="row" style="margin-bottom:12px"><button class="btn" type="button" data-new>新增問卷</button><span class="cnt">共 ' + list.length + " 份問卷</span></div><div class=\"list\">";
+    h += list.length ? list.map(function (f) {
+      var n = fbFor(f.id).length;
+      return '<div class="arow"><div class="info"><strong>' + esc(f.title) + "</strong>" +
+        '<span class="tags"><span class="pill ' + (f.open ? "open" : "closed") + '">' + stText(f) + '</span><span class="cnt">' + esc(f.audience) + " · " + n + " 份回覆" +
+        (f.deadline ? " · 截止 " + esc(U.dparts(f.deadline).full) : "") + "</span></span></div>" +
+        '<div class="row"><button class="btn sm" type="button" data-view="' + esc(f.id) + '">看結果</button><button class="btn ghost sm" type="button" data-edit="' + esc(f.id) + '">編輯</button>' +
+        '<button class="btn ghost sm" type="button" data-copylink="' + esc(f.id) + '">複製連結</button><button class="btn ghost sm" type="button" data-qr="' + esc(f.id) + '">QR Code</button>' +
+        '<button class="btn ghost sm" type="button" data-dup="' + esc(f.id) + '">複製一份</button><button class="btn danger sm" type="button" data-del="' + esc(f.id) + '">刪除</button></div></div>';
+    }).join("") : '<div class="panel"><p class="note">' + (S.forms.length ? "這個分類還沒有問卷。" : "還沒有問卷。按「新增問卷」建立第一份，可以從範本開始（例如課程滿意度、展覽參觀回饋）。") + "</p></div>";
+    el.innerHTML = h + "</div>";
+  }
+
+  function fbRowsOf(id) {
+    var fields = U.surveyFields(actById(id).survey);
+    var rows = [["填寫時間"].concat(fields.map(function (f) { return f.group ? f.group + "－" + f.head : f.head; }))];
+    fbFor(id).forEach(function (f) {
+      rows.push([U.ftime(f.createdAt)].concat(fields.map(function (x) { var v = ansOf(f, x.key); return Array.isArray(v) ? v.join("、") : v; })));
+    });
+    return rows;
+  }
+  function download(rows, name) {
+    var csv = "\uFEFF" + rows.map(function (r) { return r.map(csvCell).join(","); }).join("\r\n");
+    saveBlob(new Blob([csv], { type: "text/csv;charset=utf-8" }), name + ".csv");
+  }
+  function saveBlob(blob, filename) {
+    var url = URL.createObjectURL(blob), link = document.createElement("a");
+    link.href = url; link.download = filename.replace(/[\\/:*?"<>|]/g, "");
+    document.body.appendChild(link); link.click(); link.remove();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 2000);
+  }
+  function csvCell(v) {
+    v = String(v == null ? "" : v);
+    if (/^[=+\-@]/.test(v)) v = "'" + v; // 避免試算表把內容當成公式執行
+    return '"' + v.replace(/"/g, '""') + '"';
+  }
+
+
+  document.addEventListener("submit", function (e) {
+    e.preventDefault();
+    var f = e.target;
+    if (f.id === "login-form") {
+      if (S.busy) return; S.busy = true;
+      U.api("login", { password: $("pw").value }).then(function (j) {
+        S.token = j.token;
+        try { sessionStorage.setItem("must-admin", S.token); } catch (x) {}
+        render(); return load();
+      }).catch(function (x) { U.toast(x.message); }).then(function () { S.busy = false; });
+    }
+  });
+  document.addEventListener("click", function (e) {
+    var t = e.target.closest("[data-close],[data-aud],[data-back],[data-logout],[data-new],[data-edit],[data-dup],[data-view],[data-del],[data-copylink],[data-qr],[data-qrpng],[data-rmresp],[data-fbcsv],[data-fbxlsx],[data-fbprint],[data-chartpng],[data-allcharts],[data-qadd],[data-qmove],[data-qdel],[data-svsave],[data-svapply],[data-svtpl],[data-svdeltpl]");
+    if (!t) { if (e.target === $("dlg")) U.closeDlg(); return; }
+    var d = t.dataset, f;
+    if (d.close !== undefined) U.closeDlg();
+    else if (d.aud !== undefined) { S.aud = d.aud; render(); }
+    else if (d.back !== undefined) go("");
+    else if (d.logout !== undefined) logout("已登出。");
+    else if (d.new !== undefined) openEdit("");
+    else if (d.edit !== undefined) openEdit(d.edit);
+    else if (d.dup !== undefined) openEdit(d.dup, true);
+    else if (d.view !== undefined) go(d.view);
+    else if (d.del !== undefined) {
+      f = actById(d.del); var nr = fbFor(d.del).length;
+      if (d.sure !== "1") { d.sure = "1"; t.textContent = nr ? "連同 " + nr + " 份回覆一起刪除？" : "確定刪除？"; return; }
+      svCall(call("deleteForm", { id: d.del }), "問卷「" + (f ? f.title : "") + "」已刪除。", false);
+    } else if (d.copylink !== undefined) {
+      var link = formLink(d.copylink);
+      navigator.clipboard.writeText(link).then(function () { U.toast("問卷連結已複製，可直接貼到 LINE 或 FB。"); }, function () { U.toast("無法自動複製，連結是：" + link); });
+    } else if (d.qr !== undefined) openQr(d.qr);
+    else if (d.qrpng !== undefined) qrPng(d.qrpng);
+    else if (d.rmresp !== undefined) {
+      if (d.sure !== "1") { d.sure = "1"; t.textContent = "確定刪除？"; return; }
+      svCall(call("deleteFormResponse", { id: d.rmresp }), "已刪除這份回覆。", false);
+    } else if (d.fbcsv !== undefined) {
+      download(fbRowsOf(S.pick), "問卷回覆-" + actById(S.pick).title);
+    } else if (d.fbxlsx !== undefined) {
+      var tt = actById(S.pick).title;
+      saveXLSX([{ name: "分析", rows: fbAnalysisRows(S.pick), cols: [6, 36, 28, 8, 8, 10] }, { name: "原始回答", rows: fbRowsOf(S.pick), cols: [18] }], "問卷分析-" + tt);
+    } else if (d.fbprint !== undefined) window.print();
+    else if (d.chartpng !== undefined) chartPNG(d.chartpng);
+    else if (d.allcharts !== undefined) allChartsPNG(d.allcharts);
+    else if (d.qadd !== undefined) {
+      edSyncAll(); S.ed.sv.items.push(newItem(d.qadd)); renderSurvey(S.ed.sv.items.length - 1);
+    } else if (d.qmove !== undefined) {
+      edSyncAll(); var qi = +t.closest("[data-i]").dataset.i, to = qi + +d.qmove, its = S.ed.sv.items;
+      if (to >= 0 && to < its.length) { var tmp = its[qi]; its[qi] = its[to]; its[to] = tmp; renderSurvey(to); }
+    } else if (d.qdel !== undefined) {
+      if (d.sure !== "1") { d.sure = "1"; t.textContent = "確定刪除？"; return; }
+      edSyncAll(); S.ed.sv.items.splice(+t.closest("[data-i]").dataset.i, 1); renderSurvey();
+    } else if (d.svapply !== undefined) {
+      var pick = $("sv-tpl").value;
+      if (!pick) { U.toast("請先選擇一個範本。"); return; }
+      var src = pick === "__default" ? U.DEFAULT_SURVEY : (S.surveyTpls.filter(function (x) { return x.id === pick; })[0] || {}).survey;
+      if (src) { edSyncAll(); S.ed.sv = JSON.parse(JSON.stringify(src)); renderSurvey(); U.toast("已套用範本，記得按「儲存問卷」。"); }
+    } else if (d.svdeltpl !== undefined) {
+      var did = $("sv-tpl").value;
+      if (!did || did === "__default") { U.toast("請先選擇要刪除的範本。"); return; }
+      if (d.sure !== "1") { d.sure = "1"; t.textContent = "確定刪除範本？"; return; }
+      edSyncAll(); svCall(call("deleteSurveyTpl", { id: did }), "範本已刪除。", true);
+    } else if (d.svtpl !== undefined) {
+      edSyncAll(); var nm = $("sv-tplname").value.trim();
+      if (!nm) { U.toast("請先輸入範本名稱。"); $("sv-tplname").focus(); return; }
+      if (S.surveyTpls.some(function (x) { return x.name === nm; }) && d.sure !== "1") { d.sure = "1"; t.textContent = "已有同名範本，再按一次覆蓋"; return; }
+      svCall(call("saveSurveyTpl", { name: nm, survey: S.ed.sv }), "已存成範本「" + nm + "」。", true);
+    } else if (d.svsave !== undefined) {
+      edSyncAll();
+      if (!S.ed.sv.title) { U.toast("請填寫問卷標題。"); $("sv-title").focus(); return; }
+      var fm = S.ed.form, isNew = !fm.id;
+      svCall(call("saveForm", { form: { id: fm.id, audience: fm.audience, status: fm.status, deadline: fm.deadline, survey: S.ed.sv } }),
+        isNew ? "問卷已建立，可以複製連結或下載 QR Code 了。" : "問卷已儲存。", false, function (j) { go(j.id); if (isNew) openQr(j.id); });
+    }
+  });
+
+  if (location.hash.length > 1) S.pick = decodeURIComponent(location.hash.slice(1));
+  render();
+  if (U.configured()) loadLoginCfg();
+  if (S.token) load();
+})();
+</script>
+</body>
+</html>

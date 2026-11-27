@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>線上問卷｜新竹社會創新基地</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=LXGW+WenKai+TC:wght@400;700&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="icon" type="image/svg+xml" href="logo-mark.svg">
+<link rel="stylesheet" href="style.css?v=20261124c">
+<style>
+  .sv-wrap{max-width:760px;margin:0 auto}
+  .sv-wrap .panel{padding:22px}
+  .sv-wrap h1{font-family:var(--display);font-size:1.75rem;line-height:1.3;margin:0 0 4px}
+  .sv-done{display:flex;flex-direction:column;gap:12px;align-items:flex-start}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="brand">HSINCHU SOCIAL INNOVATION HUB</div>
+  </header>
+  <main class="sv-wrap">
+    <section id="body" aria-live="polite"><div class="panel"><p class="note">載入中…</p></div></section>
+  </main>
+</div>
+
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script src="config.js"></script>
+<script src="common.js"></script>
+<script>
+(function () {
+  "use strict";
+  var $ = U.$, esc = U.esc;
+  var id = new URLSearchParams(location.search).get("id") || "";
+  var S = { form: null, busy: false, again: false, sent: false };
+
+  function done() { try { return localStorage.getItem("hub-form-" + id) === "1"; } catch (e) { return false; } }
+  function opt(name, v, type) {
+    return '<label class="opt"><input type="' + (type || "radio") + '" name="' + esc(name) + '" value="' + esc(v) + '"><span>' + esc(v) + "</span></label>";
+  }
+  function formHtml(sv) {
+    var n = 0, h = '<form id="sv-fill" class="survey" novalidate>';
+    sv.items.forEach(function (it) {
+      if (it.type === "note") { h += '<div class="sv-note">' + esc(it.text) + "</div>"; return; }
+      n++;
+      h += '<fieldset class="sv-q" data-q="' + esc(it.id) + '"><legend class="sv-t"><b>' + n + "</b><span>" + esc(it.title) + (it.required ? " <i>*</i>" : "") + "</span></legend>";
+      if (it.type === "single") h += '<div class="choices">' + it.options.map(function (o) { return opt(it.id, o); }).join("") + "</div>";
+      else if (it.type === "multi") h += '<p class="note" style="margin:0">可複選，請選 ' + (it.minSel === it.maxSel ? it.minSel : it.minSel + "～" + it.maxSel) + " 項</p>" +
+        '<div class="choices">' + it.options.map(function (o) { return opt(it.id, o, "checkbox"); }).join("") + "</div>";
+      else if (it.type === "matrix") h += it.rows.map(function (r) {
+        return '<fieldset class="mrow" data-row="' + esc(r.id) + '"><legend>' + esc(r.label) + '</legend><div class="choices" style="grid-template-columns:repeat(' + it.options.length + ',minmax(0,1fr))">' +
+          it.options.map(function (o) { return opt(r.id, o); }).join("") + "</div></fieldset>";
+      }).join("");
+      else if (it.type === "text") h += '<textarea name="' + esc(it.id) + '" maxlength="1000" placeholder="請填入文字" aria-label="' + esc(it.title) + '"></textarea>';
+      else if (it.type === "slider") h += '<div class="slider untouched"><input type="range" name="' + esc(it.id) + '" min="' + it.min + '" max="' + it.max + '" step="1" value="' + Math.round((it.min + it.max) / 2) + '" aria-label="' + esc(it.title) + '"><output>請拖曳選擇</output></div>' +
+        '<div class="ends"><span>' + it.min + "</span><span>" + it.max + "</span></div>";
+      h += "</fieldset>";
+    });
+    return h + '<button class="btn" type="submit">送出</button></form>';
+  }
+  function render() {
+    var el = $("body"), f = S.form;
+    if (!U.configured()) { el.innerHTML = U.SETUP_NOTE; return; }
+    if (S.error) { el.innerHTML = '<div class="panel"><p><strong>' + esc(S.error) + '</strong></p><p class="note">請確認網址是否完整，或稍後再試一次。</p><button class="btn ghost sm" type="button" data-reload>重新載入</button></div>'; return; }
+    if (!f) { el.innerHTML = '<div class="panel"><p class="note">載入中…</p></div>'; return; }
+    var sv = f.survey, h = '<div class="panel"><h1>' + esc(sv.title || f.title) + "</h1>";
+    document.title = (sv.title || f.title) + "｜新竹社會創新基地";
+    if (!f.open) h += '<p class="note">這份問卷已經關閉，謝謝您的關注！</p>';
+    else if (S.sent || (done() && !S.again)) h += '<div class="sv-done"><div class="ok">' + (S.sent ? "已送出，謝謝您的填寫！" : "這台裝置已經填過這份問卷，謝謝您！") + "</div>" +
+      '<button class="btn ghost" type="button" data-again>再填一份問卷</button></div>';
+    else h += (sv.intro ? '<div class="sv-intro" style="margin:10px 0 4px"><p style="white-space:pre-line">' + esc(sv.intro) + "</p></div>" : "") + formHtml(sv);
+    el.innerHTML = h + '<p class="note" style="margin:16px 0 0">新竹社會創新基地（竹北同心樓 3 樓）｜03-5593142 分機 3529</p></div>';
+  }
+  function collect(form) {
+    var ans = {}, miss = null;
+    form.querySelectorAll(".miss").forEach(function (el) { el.classList.remove("miss"); });
+    U.surveyFields(S.form.survey).forEach(function (f) {
+      var v = "", why = "";
+      if (f.type === "scale" || f.type === "single") { var c = form.querySelector('input[name="' + f.key + '"]:checked'); v = c ? c.value : ""; }
+      else if (f.type === "multi") {
+        v = [].map.call(form.querySelectorAll('input[name="' + f.key + '"]:checked'), function (x) { return x.value; });
+        if (v.length && (v.length < f.minSel || v.length > f.maxSel)) why = "請選擇 " + (f.minSel === f.maxSel ? f.minSel : f.minSel + "～" + f.maxSel) + " 個選項";
+      }
+      else if (f.type === "text") v = form.querySelector('[name="' + f.key + '"]').value.trim();
+      else if (f.type === "slider") { var r = form.querySelector('[name="' + f.key + '"]'); v = r.closest(".slider").classList.contains("untouched") ? "" : r.value; }
+      ans[f.key] = v;
+      if (!why && f.required && (v === "" || (Array.isArray(v) && !v.length))) why = "請填寫";
+      if (why) {
+        var el = form.querySelector('[data-row="' + f.key + '"]') || form.querySelector('[data-q="' + f.key + '"]');
+        if (el) { el.classList.add("miss"); var q = el.closest(".sv-q"); if (q) q.classList.add("miss"); }
+        if (!miss) miss = { f: f, el: el, why: why };
+      }
+    });
+    if (miss) {
+      var label = "「" + (miss.f.group ? miss.f.group + "－" : "") + miss.f.head + "」";
+      U.toast(miss.why === "請填寫" ? "請填寫" + label : label + miss.why);
+      if (miss.el) miss.el.scrollIntoView({ block: "center", behavior: "smooth" });
+      return null;
+    }
+    return ans;
+  }
+  function load() {
+    if (!id) { S.error = "網址缺少問卷編號"; render(); return; }
+    S.error = "";
+    U.api("form", { id: id }).then(function (j) { S.form = j.form; render(); }, function (e) { S.error = e.message; render(); });
+  }
+
+  document.addEventListener("submit", function (e) {
+    e.preventDefault();
+    var form = e.target;
+    if (form.id !== "sv-fill" || S.busy) return;
+    var ans = collect(form);
+    if (!ans) return;
+    S.busy = true;
+    var btn = form.querySelector('button[type="submit"]');
+    btn.disabled = true; btn.textContent = "送出中…";
+    U.api("formSubmit", { id: id, answers: ans }).then(function () {
+      try { localStorage.setItem("hub-form-" + id, "1"); } catch (x) {}
+      S.sent = true; S.again = false; render(); window.scrollTo({ top: 0, behavior: "smooth" });
+    }, function (er) { U.toast(er.message); btn.disabled = false; btn.textContent = "送出"; })
+      .then(function () { S.busy = false; });
+  });
+  document.addEventListener("click", function (e) {
+    var t = e.target.closest("[data-again],[data-reload]");
+    if (!t) return;
+    if (t.dataset.again !== undefined) { S.again = true; S.sent = false; render(); window.scrollTo({ top: 0 }); }
+    else load();
+  });
+  document.addEventListener("input", function (e) {
+    var q = e.target.closest && e.target.closest(".miss");
+    if (q && (e.target.type === "radio" || e.target.type === "checkbox")) { var row = e.target.closest(".mrow"); if (row) row.classList.remove("miss"); var sq = e.target.closest(".sv-q"); if (sq && !sq.querySelector(".mrow.miss")) sq.classList.remove("miss"); }
+    if (e.target.type === "range") {
+      var box = e.target.closest(".slider");
+      box.classList.remove("untouched");
+      box.querySelector("output").textContent = e.target.value + " 分";
+      var s2 = e.target.closest(".sv-q"); if (s2) s2.classList.remove("miss");
+    }
+    if (e.target.tagName === "TEXTAREA") { var s3 = e.target.closest(".sv-q"); if (s3) s3.classList.remove("miss"); }
+  });
+
+  render();
+  load();
+})();
+</script>
+</body>
+</html>
