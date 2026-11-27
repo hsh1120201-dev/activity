@@ -40,6 +40,7 @@
     <section aria-labelledby="h-list">
       <div class="sec-head"><h2 id="h-list">近期活動</h2><small>按「我要報名」或「填寫回饋」即可開始</small></div>
       <div class="filters">
+        <label for="f-q" style="flex:1 1 100%">搜尋<input type="text" id="f-q" inputmode="search" enterkeyhint="search" placeholder="活動名稱、地點、內容…" autocomplete="off"></label>
         <label for="f-sem">類別<select id="f-sem"><option value="">全部類別</option></select></label>
         <label for="f-status">狀態<select id="f-status">
           <option value="">全部狀態</option><option value="open">報名中</option><option value="feedback">回饋中</option><option value="closed">已結束</option>
@@ -120,6 +121,11 @@
       b("fb", fbOn, "填寫回饋", a.status === "closed" ? "回饋已關閉" : "回饋尚未開放") + "</" + tag + ">";
   }
 
+  function hit(a, ws) {
+    if (!ws.length) return true;
+    var d = U.dparts(a.date), all = [a.title, a.description, a.location, a.time, a.semester, a.date, d.md, d.full].join(" ").toLowerCase();
+    return ws.every(function (w) { return all.indexOf(w) >= 0; });
+  }
   function render() {
     var sel = $("f-sem"), cur = sel.value, sems = {};
     S.acts.forEach(function (a) { if (a.semester) sems[a.semester] = 1; });
@@ -127,14 +133,15 @@
     sel.innerHTML = '<option value="">全部類別</option>' + keys.map(function (k) { return '<option value="' + esc(k) + '">' + esc(k) + "</option>"; }).join("");
     if (keys.indexOf(cur) >= 0) sel.value = cur;
     var fs = sel.value, ft = $("f-status").value, list = $("list");
+    var ws = $("f-q").value.trim().toLowerCase().split(/\s+/).filter(Boolean); // 多個關鍵字用空白隔開，要全部符合
 
     if (!U.configured()) list.innerHTML = U.SETUP_NOTE;
     else if (S.error) list.innerHTML = '<div class="panel"><p class="note">' + esc(S.error) + '</p><p style="margin:10px 0 0"><button class="btn ghost sm" type="button" data-reload>重新載入</button></p></div>';
     else if (!S.loaded) list.innerHTML = '<div class="panel"><p class="note">載入中…</p></div>';
     else {
-      var rows = U.sortActs(S.acts).filter(function (a) { return (!fs || a.semester === fs) && (!ft || a.status === ft); });
+      var rows = U.sortActs(S.acts).filter(function (a) { return (!fs || a.semester === fs) && (!ft || a.status === ft) && hit(a, ws); });
       list.innerHTML = rows.length ? rows.map(actRow).join("") :
-        '<div class="panel"><p class="note">' + (S.acts.length ? "沒有符合條件的活動，試試其他類別或狀態。" : "目前還沒有活動。") + "</p></div>";
+        '<div class="panel"><p class="note">' + (S.acts.length ? (ws.length ? "找不到符合「" + esc($("f-q").value.trim()) + "」的活動，換個關鍵字試試。" : "沒有符合條件的活動，試試其他類別或狀態。") : "目前還沒有活動。") + "</p></div>";
     }
   }
 
@@ -306,6 +313,9 @@
   });
   document.addEventListener("change", function (e) {
     if (e.target.id === "f-sem" || e.target.id === "f-status") render();
+  });
+  document.addEventListener("input", function (e) {
+    if (e.target.id === "f-q") render();
     var q = e.target.closest && e.target.closest(".miss");
     if (q && (e.target.type === "radio" || e.target.type === "checkbox")) { var row = e.target.closest(".mrow"); if (row) row.classList.remove("miss"); var sq = e.target.closest(".sv-q"); if (sq && !sq.querySelector(".mrow.miss")) sq.classList.remove("miss"); }
   });
